@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v5.0</title>
+    <title>VK Activity Checker v5.4 (friends.getRecent с пагинацией)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -182,13 +182,17 @@
         .btn-sm-success:hover { background: #219a52; }
         .btn-sm-secondary:hover { background: #7f8c8d; }
 
-        .friend-date {
+        .friend-badge {
             font-size: 10px;
             color: #7f8c8d;
             background: #ecf0f1;
             padding: 1px 8px;
             border-radius: 10px;
             margin-left: 8px;
+        }
+        .friend-badge.recent {
+            background: #3498db;
+            color: white;
         }
 
         #user-list {
@@ -344,8 +348,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v5.0</h2>
-    <p class="desc">Сортировка по дате добавления в друзья (friend_date)</p>
+    <h2>VK Activity Checker v5.4</h2>
+    <p class="desc">friends.getRecent с пагинацией (полный список недавних)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -447,6 +451,9 @@
     let allFriends = [];
     let activeUsers = new Set();
     let inactiveUsers = [];
+
+    let recentSet = new Set();      // ID недавно добавленных друзей
+    let recentList = [];           // упорядоченный список ID (новые в начале)
 
     let filteredUsers = [];
     let currentPage = 1;
@@ -608,19 +615,33 @@
         if (startBtn) startBtn.disabled = false;
     }
 
-    // ============ СОРТИРОВКА ПО friend_date ============
+    // ============ СОРТИРОВКА ПО recent ============
     function applyOrderAndRender() {
-        // Сортируем по friend_date в зависимости от порядка
         const sorted = [...inactiveUsers].sort((a, b) => {
-            // Если friend_date нет, считаем его 0
-            const dateA = a.friend_date || 0;
-            const dateB = b.friend_date || 0;
-            if (currentOrder === 'old') {
-                return dateA - dateB; // старые сверху
-            } else {
-                return dateB - dateA; // новые сверху
+            const aRecent = recentSet.has(a.id);
+            const bRecent = recentSet.has(b.id);
+
+            if (aRecent && !bRecent) {
+                return currentOrder === 'old' ? 1 : -1;
             }
+            if (!aRecent && bRecent) {
+                return currentOrder === 'old' ? -1 : 1;
+            }
+
+            if (aRecent && bRecent) {
+                const idxA = recentList.indexOf(a.id);
+                const idxB = recentList.indexOf(b.id);
+                if (currentOrder === 'old') {
+                    return idxB - idxA; // чем больше idx, тем старше (т.к. новые имеют меньший индекс)
+                } else {
+                    return idxA - idxB;
+                }
+            }
+
+            // Оба не в recent — сортируем по ID (меньше ID = старее)
+            return currentOrder === 'old' ? a.id - b.id : b.id - a.id;
         });
+
         inactiveUsers = sorted;
         currentPage = 1;
         renderPage();
@@ -639,7 +660,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей с полем friend_date ============
+    // ============ ШАГ 2: Сбор друзей и recent с пагинацией ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -652,10 +673,9 @@
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
             const res = await vkCall('friends.get', {
-                fields: 'photo_50,first_name,last_name,deactivated,friend_date',
+                fields: 'photo_50,first_name,last_name,deactivated',
                 count: count,
                 offset: offset
-                // Убираем order, чтобы получить все данные
             }, token);
 
             if (res.error) {
@@ -677,9 +697,45 @@
 
         const filtered = all.filter(f => !f.deactivated);
         log(`Собрано друзей: ${filtered.length}`, 'info');
-        // Проверим наличие friend_date у первых 5
-        const sample = filtered.slice(0, 5).map(f => ({id: f.id, date: f.friend_date ? new Date(f.friend_date * 1000).toLocaleDateString() : 'нет'}));
-        log(`Пример дат добавления (первые 5): ${JSON.stringify(sample)}`, 'info');
+
+        // ===== Получаем список недавно добавленных с пагинацией =====
+        setStage('Получение recent (пагинация)');
+        let allRecent = [];
+        let recentOffset = 0;
+        const recentCount = 1000;
+        let recentHasMore = true;
+
+        while (recentHasMore && isRunning) {
+            log(`Загрузка recent: offset ${recentOffset}...`, 'info');
+            const recentRes = await vkCall('friends.getRecent', {
+                count: recentCount,
+                offset: recentOffset
+            }, token);
+
+            if (recentRes.error) {
+                log('Ошибка получения recent: ' + recentRes.error.error_msg, 'warn');
+                recentHasMore = false;
+                break;
+            }
+
+            const items = recentRes.response.items || [];
+            allRecent = allRecent.concat(items);
+
+            if (items.length < recentCount) {
+                recentHasMore = false;
+            } else {
+                recentOffset += recentCount;
+                await sleep(delays.betweenFriendBatches);
+            }
+        }
+
+        recentSet = new Set(allRecent);
+        recentList = allRecent; // порядок: сначала новые
+        log(`Получено недавно добавленных (всего): ${allRecent.length}`, 'info');
+        if (allRecent.length > 0) {
+            log(`Пример recent ID: ${allRecent.slice(0, 5).join(', ')}`, 'info');
+        }
+
         return filtered;
     }
 
@@ -812,10 +868,9 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v5.0`, 'info');
+        log(`🚀 Запуск анализа v5.4 (friends.getRecent с пагинацией)`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        log(`⚠️ Сортировка по дате добавления (friend_date)`, 'warn');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
@@ -874,7 +929,7 @@
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
-            // Применяем сортировку по friend_date
+            // Применяем сортировку по recent
             applyOrderAndRender();
 
             const statsGrid = document.getElementById('statsGrid');
@@ -889,7 +944,7 @@
             log(`   Всего друзей: ${allFriends.length}`, 'info');
             log(`   Активных: ${activeUsers.size}`, 'success');
             log(`   Неактивных: ${inactive.length}`, 'warn');
-            log(`   Порядок по дате добавления (friend_date)`, 'info');
+            log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
 
             setStatus('Готово');
 
@@ -944,7 +999,8 @@
         for (const user of pageUsers) {
             const avatar = user.photo_50 || '';
             const name = (user.first_name || '') + ' ' + (user.last_name || '');
-            const date = user.friend_date ? new Date(user.friend_date * 1000).toLocaleDateString() : 'неизвестно';
+            const isRecent = recentSet.has(user.id);
+            const badge = isRecent ? '<span class="friend-badge recent">🆕 недавний</span>' : '<span class="friend-badge">📅 старый</span>';
 
             html += `
                 <div class="user-card">
@@ -952,7 +1008,7 @@
                     <div class="info">
                         <div class="name">
                             ${name} <span class="badge">неактивен</span>
-                            <span class="friend-date">📅 ${date}</span>
+                            ${badge}
                             <span class="friend-order">#${position}</span>
                         </div>
                         <div class="details">
