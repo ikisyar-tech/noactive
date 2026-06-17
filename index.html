@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v2.1</title>
+    <title>VK Activity Checker v3.0</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -291,8 +291,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v2.1</h2>
-    <p class="desc">Анализ активности друзей. Показывает только неактивных.</p>
+    <h2>VK Activity Checker v3.0</h2>
+    <p class="desc">Проверяет активность друзей на ВАШЕЙ стене (лайки и комментарии)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -308,7 +308,7 @@
             3. Скопируйте <b>всю ссылку</b> из адресной строки браузера.<br>
             4. Вставьте её в поле ниже (можно также только токен после <b>access_token=</b>).<br>
             5. Выберите режим: <b>Безопасный</b> (увеличенные задержки) или <b>Обычный</b>.<br>
-            6. Укажите количество постов для проверки (0 = все).<br>
+            6. Укажите количество постов на вашей стене для проверки (0 = все).<br>
             7. Нажмите «Начать анализ» и дождитесь завершения.
         </div>
     </div>
@@ -324,8 +324,8 @@
     </div>
 
     <div class="input-group">
-        <label>Количество постов для проверки (0 = все)</label>
-        <input type="number" id="postsLimit" value="100" min="0" step="1">
+        <label>Количество постов на вашей стене для проверки (0 = все)</label>
+        <input type="number" id="postsLimit" value="50" min="0" step="1">
     </div>
 
     <div class="controls">
@@ -337,8 +337,9 @@
         <div class="stat-row"><span>Статус:</span> <span id="status-text" class="stat-val">Ожидание</span></div>
         <div class="stat-row"><span>Режим:</span> <span id="mode-text" class="stat-val">Безопасный</span></div>
         <div class="stat-row"><span>Всего друзей:</span> <span id="total-friends" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Проверено:</span> <span id="checked-count" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Неактивных:</span> <span id="inactive-count" class="stat-val">0</span></div>
+        <div class="stat-row"><span>Проверено постов на стене:</span> <span id="checked-posts" class="stat-val">0</span></div>
+        <div class="stat-row"><span>Проверено друзей:</span> <span id="checked-friends" class="stat-val">0</span></div>
+        <div class="stat-row"><span>Неактивных (не реагируют):</span> <span id="inactive-count" class="stat-val">0</span></div>
         <div class="progress-container">
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
@@ -371,6 +372,7 @@
 <script>
     let isRunning = false;
     let currentToken = '';
+    let myId = null;
     let allUsers = [];
     let inactiveUsers = [];
     let filteredUsers = [];
@@ -379,7 +381,6 @@
     let currentMode = 'safe';
     let abortFlag = false;
 
-    // Для расчёта ETA
     let startTime = null;
     let processedCount = 0;
     let totalToProcess = 0;
@@ -508,6 +509,19 @@
         document.getElementById('startBtn').disabled = false;
     }
 
+    // Получение ID текущего пользователя
+    async function getMyId(token) {
+        if (myId) return myId;
+        const res = await vkCall('users.get', {}, token);
+        if (res.error) {
+            log('Ошибка получения ID: ' + res.error.error_msg, 'err');
+            return null;
+        }
+        myId = res.response[0].id;
+        return myId;
+    }
+
+    // Получение всех друзей
     async function getAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -543,82 +557,90 @@
         return all.filter(f => !f.deactivated);
     }
 
-    async function getUserActivity(userId, token, postsLimit) {
+    // Получение постов со стены владельца токена
+    async function getMyWallPosts(token, postsLimit) {
+        const id = await getMyId(token);
+        if (!id) return [];
+
+        const res = await vkCall('wall.get', {
+            owner_id: id,
+            count: Math.min(postsLimit || 100, 100),
+            offset: 0,
+            filter: 'all'
+        }, token);
+
+        if (res.error) {
+            log('Ошибка получения постов стены: ' + res.error.error_msg, 'err');
+            return [];
+        }
+
+        return res.response.items || [];
+    }
+
+    // Проверка активности КОНКРЕТНОГО друга на моей стене
+    async function checkFriendActivityOnMyWall(friendId, token, myPosts) {
         let activity = {
-            userId: userId,
+            userId: friendId,
             likedPosts: 0,
             likedComments: 0,
             comments: 0,
             lastActivity: null,
             hasActivity: false
         };
+
         const delays = getDelays();
 
         try {
-            const wallRes = await vkCall('wall.get', {
-                owner_id: userId,
-                count: Math.min(postsLimit || 100, 100),
-                offset: 0,
-                filter: 'all'
-            }, token);
+            for (const post of myPosts) {
+                if (!isRunning) break;
 
-            if (wallRes.error) {
-                return activity;
-            }
+                // Проверяем, лайкнул ли друг этот пост
+                const likeRes = await vkCall('likes.isLiked', {
+                    user_id: friendId,
+                    type: 'post',
+                    item_id: post.id,
+                    owner_id: myId
+                }, token);
 
-            const posts = wallRes.response.items || [];
-            const postIds = posts.map(p => p.id);
-
-            if (postIds.length > 0) {
-                for (const postId of postIds) {
-                    if (!isRunning) break;
-                    const likeRes = await vkCall('likes.isLiked', {
-                        user_id: userId,
-                        type: 'post',
-                        item_id: postId,
-                        owner_id: userId
-                    }, token);
-
-                    if (likeRes.response && likeRes.response.liked === 1) {
-                        activity.likedPosts++;
-                        activity.hasActivity = true;
-                        activity.lastActivity = new Date().toISOString();
-                    }
-                    await sleep(delays.betweenLikes);
+                if (likeRes.response && likeRes.response.liked === 1) {
+                    activity.likedPosts++;
+                    activity.hasActivity = true;
+                    activity.lastActivity = new Date(post.date * 1000).toISOString();
                 }
 
-                for (const postId of postIds) {
-                    if (!isRunning) break;
-                    const commentRes = await vkCall('wall.getComments', {
-                        owner_id: userId,
-                        post_id: postId,
-                        count: 100,
-                        offset: 0
-                    }, token);
+                await sleep(delays.betweenLikes);
 
-                    if (!commentRes.error && commentRes.response) {
-                        const comments = commentRes.response.items || [];
-                        for (const comment of comments) {
-                            if (comment.from_id === userId) {
-                                activity.comments++;
-                                activity.hasActivity = true;
-                                activity.lastActivity = new Date(comment.date * 1000).toISOString();
-                            }
-                            if (comment.likes && comment.likes.user_likes === 1) {
-                                activity.likedComments++;
-                                activity.hasActivity = true;
-                                activity.lastActivity = new Date(comment.date * 1000).toISOString();
-                            }
+                // Проверяем комментарии друга под этим постом
+                const commentRes = await vkCall('wall.getComments', {
+                    owner_id: myId,
+                    post_id: post.id,
+                    count: 100
+                }, token);
+
+                if (!commentRes.error && commentRes.response) {
+                    const comments = commentRes.response.items || [];
+                    for (const comment of comments) {
+                        if (comment.from_id === friendId) {
+                            activity.comments++;
+                            activity.hasActivity = true;
+                            activity.lastActivity = new Date(comment.date * 1000).toISOString();
+                        }
+                        // Проверяем, лайкнул ли друг комментарий
+                        if (comment.likes && comment.likes.user_likes === 1 && comment.from_id === friendId) {
+                            activity.likedComments++;
+                            activity.hasActivity = true;
+                            activity.lastActivity = new Date(comment.date * 1000).toISOString();
                         }
                     }
-                    await sleep(delays.betweenComments);
                 }
+
+                await sleep(delays.betweenComments);
             }
 
             return activity;
 
         } catch (e) {
-            log(`Ошибка проверки пользователя ${userId}: ${e.message}`, 'warn');
+            log(`Ошибка проверки друга ${friendId}: ${e.message}`, 'warn');
             return activity;
         }
     }
@@ -635,16 +657,15 @@
         abortFlag = false;
 
         const postsLimit = parseInt(document.getElementById('postsLimit').value) || 100;
-        const delays = getDelays();
 
         isRunning = true;
         document.getElementById('startBtn').disabled = true;
         logDiv.innerHTML = '';
-        log(`Начинаем анализ в режиме: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
-        setStatus('Загрузка друзей...');
+        log(`Начинаем анализ активности друзей на вашей стене...`, 'info');
+        log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
+        setStatus('Получение ID...');
         updateProgress(0, 'загрузка...');
 
-        // Сброс ETA
         startTime = null;
         processedCount = 0;
         totalToProcess = 0;
@@ -654,6 +675,31 @@
         }
 
         try {
+            // 1. Получаем ID владельца токена
+            const ownerId = await getMyId(token);
+            if (!ownerId) {
+                isRunning = false;
+                setStatus('Ошибка');
+                document.getElementById('startBtn').disabled = false;
+                return;
+            }
+            log(`ID владельца токена: ${ownerId}`, 'info');
+
+            // 2. Получаем посты со стены
+            setStatus('Загрузка постов со стены...');
+            const myPosts = await getMyWallPosts(token, postsLimit);
+            if (myPosts.length === 0) {
+                log('На стене нет постов для проверки', 'warn');
+                isRunning = false;
+                setStatus('Нет постов');
+                document.getElementById('startBtn').disabled = false;
+                return;
+            }
+            updateStat('checked-posts', myPosts.length);
+            log(`Загружено ${myPosts.length} постов с вашей стены`, 'info');
+
+            // 3. Получаем всех друзей
+            setStatus('Загрузка друзей...');
             const friends = await getAllFriends(token);
             if (!friends) {
                 isRunning = false;
@@ -668,7 +714,6 @@
             totalToProcess = friends.length;
             startTime = Date.now();
 
-            // Запускаем обновление ETA
             etaInterval = setInterval(updateETA, 2000);
 
             const results = [];
@@ -677,7 +722,7 @@
             for (const friend of friends) {
                 if (!isRunning || abortFlag) break;
 
-                const activity = await getUserActivity(friend.id, token, postsLimit);
+                const activity = await checkFriendActivityOnMyWall(friend.id, token, myPosts);
                 const userData = {
                     ...friend,
                     activity: activity,
@@ -687,11 +732,10 @@
                 checked++;
                 processedCount = checked;
 
-                updateStat('checked-count', checked);
+                updateStat('checked-friends', checked);
                 const inactiveCount = results.filter(r => !r.isActive).length;
                 updateStat('inactive-count', inactiveCount);
 
-                // Обновляем прогресс
                 const percent = (checked / totalToProcess) * 100;
                 updateProgress(percent);
 
@@ -699,21 +743,24 @@
                     log(`Проверено ${checked}/${totalToProcess} друзей. Неактивных: ${inactiveCount}`, 'info');
                 }
 
+                const delays = getDelays();
                 await sleep(delays.betweenUsers);
             }
 
-            // Останавливаем ETA
             if (etaInterval) {
                 clearInterval(etaInterval);
                 etaInterval = null;
             }
 
             allUsers = results;
+            // Только те, у кого НЕТ активности на моей стене
             inactiveUsers = results.filter(r => !r.isActive);
             filteredUsers = [...inactiveUsers];
 
             updateProgress(100, 'завершено');
-            log(`✅ Анализ завершён! Всего друзей: ${results.length}, Неактивных: ${inactiveUsers.length}`, 'success');
+            log(`✅ Анализ завершён! Всего друзей: ${results.length}`, 'success');
+            log(`   Активных (реагируют на ваши посты): ${results.length - inactiveUsers.length}`, 'success');
+            log(`   Неактивных (не реагируют): ${inactiveUsers.length}`, 'warn');
             setStatus('Готово');
             currentPage = 1;
             renderPage();
@@ -758,7 +805,7 @@
 
         const container = document.getElementById('user-list');
         if (filteredUsers.length === 0) {
-            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? 'Неактивных друзей не найдено ✅' : 'Нет пользователей, соответствующих поиску'}</div>`;
+            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны! Никто не пропустил ни одного вашего поста.' : 'Нет пользователей, соответствующих поиску'}</div>`;
             return;
         }
 
@@ -772,13 +819,12 @@
                 <div class="user-card">
                     <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : ''}</div>
                     <div class="info">
-                        <div class="name">${name} <span class="badge">неактивен</span></div>
+                        <div class="name">${name} <span class="badge">не реагирует</span></div>
                         <div class="details">
-                            <span>❤️ ${activity.likedPosts || 0}</span>
-                            <span>💬 ${activity.comments || 0}</span>
-                            <span>👍 ${activity.likedComments || 0}</span>
+                            <span>❤️ лайков: ${activity.likedPosts || 0}</span>
+                            <span>💬 комментов: ${activity.comments || 0}</span>
+                            <span>👍 лайков комм: ${activity.likedComments || 0}</span>
                             <span>ID: ${user.id}</span>
-                            ${activity.lastActivity ? `<span>📅 ${new Date(activity.lastActivity).toLocaleDateString()}</span>` : ''}
                         </div>
                     </div>
                     <div class="actions">
