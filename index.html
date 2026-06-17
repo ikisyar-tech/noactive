@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v3.0</title>
+    <title>VK Activity Checker v4.0</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -277,6 +277,29 @@
             border: 3px solid #2c3e50;
             transform: scale(1.02);
         }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .stats-grid .stat-item {
+            text-align: center;
+            padding: 10px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .stats-grid .stat-item .num {
+            font-size: 22px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stats-grid .stat-item .label {
+            font-size: 11px;
+            color: #95a5a6;
+        }
+        .stats-grid .stat-item.active-stat .num { color: #27ae60; }
+        .stats-grid .stat-item.inactive-stat .num { color: #e74c3c; }
 
         @media (max-width: 600px) {
             .controls { grid-template-columns: 1fr; }
@@ -285,14 +308,15 @@
             .filter-bar { flex-direction: column; align-items: stretch; }
             .filter-bar .result-count { margin-left: 0; text-align: center; }
             .mode-selector { flex-direction: column; }
+            .stats-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v3.0</h2>
-    <p class="desc">Проверяет активность друзей на ВАШЕЙ стене (лайки и комментарии)</p>
+    <h2>VK Activity Checker v4.0</h2>
+    <p class="desc">Сравнивает базу друзей с базой активных пользователей</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -307,9 +331,8 @@
             2. Затем нажмите «Получить токен» и разрешите доступ.<br>
             3. Скопируйте <b>всю ссылку</b> из адресной строки браузера.<br>
             4. Вставьте её в поле ниже (можно также только токен после <b>access_token=</b>).<br>
-            5. Выберите режим: <b>Безопасный</b> (увеличенные задержки) или <b>Обычный</b>.<br>
-            6. Укажите количество постов на вашей стене для проверки (0 = все).<br>
-            7. Нажмите «Начать анализ» и дождитесь завершения.
+            5. Выберите режим и количество постов для проверки.<br>
+            6. Нажмите «Начать анализ».
         </div>
     </div>
 
@@ -336,10 +359,7 @@
     <div id="status-display">
         <div class="stat-row"><span>Статус:</span> <span id="status-text" class="stat-val">Ожидание</span></div>
         <div class="stat-row"><span>Режим:</span> <span id="mode-text" class="stat-val">Безопасный</span></div>
-        <div class="stat-row"><span>Всего друзей:</span> <span id="total-friends" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Проверено постов на стене:</span> <span id="checked-posts" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Проверено друзей:</span> <span id="checked-friends" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Неактивных (не реагируют):</span> <span id="inactive-count" class="stat-val">0</span></div>
+        <div class="stat-row"><span>Этап:</span> <span id="stage-text" class="stat-val">-</span></div>
         <div class="progress-container">
             <div class="progress-bar">
                 <div class="progress-fill" id="progressFill"></div>
@@ -348,6 +368,21 @@
                 <span class="percent" id="percentText">0.0%</span>
                 <span class="eta" id="etaText">⏳ Ожидание...</span>
             </div>
+        </div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid" style="display:none;">
+        <div class="stat-item">
+            <div class="num" id="statTotal">0</div>
+            <div class="label">Всего друзей</div>
+        </div>
+        <div class="stat-item active-stat">
+            <div class="num" id="statActive">0</div>
+            <div class="label">Активных</div>
+        </div>
+        <div class="stat-item inactive-stat">
+            <div class="num" id="statInactive">0</div>
+            <div class="label">Неактивных</div>
         </div>
     </div>
 
@@ -373,8 +408,12 @@
     let isRunning = false;
     let currentToken = '';
     let myId = null;
-    let allUsers = [];
-    let inactiveUsers = [];
+
+    // Базы данных
+    let allFriends = [];        // Все друзья {id, first_name, last_name, photo_50}
+    let activeUsers = new Set(); // ID активных пользователей
+    let inactiveUsers = [];     // Результат: друзья - активные
+
     let filteredUsers = [];
     let currentPage = 1;
     const PAGE_SIZE = 20;
@@ -385,6 +424,7 @@
     let processedCount = 0;
     let totalToProcess = 0;
     let etaInterval = null;
+    let currentStage = '';
 
     const logDiv = document.getElementById('log');
 
@@ -394,14 +434,16 @@
                 betweenFriendBatches: 1000,
                 betweenLikes: 200,
                 betweenComments: 200,
-                betweenUsers: 1000
+                betweenUsers: 1000,
+                betweenPosts: 500
             };
         } else {
             return {
                 betweenFriendBatches: 500,
                 betweenLikes: 100,
                 betweenComments: 100,
-                betweenUsers: 500
+                betweenUsers: 500,
+                betweenPosts: 250
             };
         }
     }
@@ -420,6 +462,7 @@
 
     function updateStat(id, val) { document.getElementById(id).innerText = val; }
     function setStatus(text) { document.getElementById('status-text').innerText = text; }
+    function setStage(text) { document.getElementById('stage-text').innerText = text; currentStage = text; }
 
     function updateProgress(percent, eta = null) {
         const fill = document.getElementById('progressFill');
@@ -493,7 +536,7 @@
         document.getElementById('mode-text').innerText = mode === 'safe' ? 'Безопасный' : 'Обычный';
         document.getElementById('modeSafe').className = 'btn-mode-safe' + (mode === 'safe' ? ' active-mode' : '');
         document.getElementById('modeNormal').className = 'btn-mode-normal' + (mode === 'normal' ? ' active-mode' : '');
-        log(`Режим изменён на: ${mode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
+        log(`Режим: ${mode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
     }
 
     function stopAnalysis() {
@@ -504,12 +547,12 @@
             etaInterval = null;
         }
         updateProgress(0, 'остановлено');
-        log('Анализ остановлен пользователем', 'warn');
+        log('Анализ остановлен', 'warn');
         setStatus('Остановлен');
         document.getElementById('startBtn').disabled = false;
     }
 
-    // Получение ID текущего пользователя
+    // ==================== ШАГ 1: Получение ID владельца ====================
     async function getMyId(token) {
         if (myId) return myId;
         const res = await vkCall('users.get', {}, token);
@@ -518,16 +561,19 @@
             return null;
         }
         myId = res.response[0].id;
+        log(`ID владельца: ${myId}`, 'info');
         return myId;
     }
 
-    // Получение всех друзей
-    async function getAllFriends(token) {
+    // ==================== ШАГ 2: Сбор базы друзей ====================
+    async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
         const count = 1000;
         let hasMore = true;
         const delays = getDelays();
+
+        setStage('Сбор базы друзей');
 
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
@@ -538,7 +584,7 @@
             }, token);
 
             if (res.error) {
-                log('Ошибка получения друзей: ' + res.error.error_msg, 'err');
+                log('Ошибка: ' + res.error.error_msg, 'err');
                 return null;
             }
 
@@ -554,97 +600,125 @@
             }
         }
 
-        return all.filter(f => !f.deactivated);
+        // Убираем удалённые/заблокированные
+        const filtered = all.filter(f => !f.deactivated);
+        log(`Собрано друзей: ${filtered.length} (удалённых: ${all.length - filtered.length})`, 'info');
+        return filtered;
     }
 
-    // Получение постов со стены владельца токена
-    async function getMyWallPosts(token, postsLimit) {
-        const id = await getMyId(token);
-        if (!id) return [];
+    // ==================== ШАГ 3: Сбор активных пользователей ====================
+    async function collectActiveUsers(token, postsLimit) {
+        const activeSet = new Set();
+        const delays = getDelays();
 
-        const res = await vkCall('wall.get', {
-            owner_id: id,
+        setStage('Сбор базы активных');
+
+        // Получаем посты со стены
+        const postsRes = await vkCall('wall.get', {
+            owner_id: myId,
             count: Math.min(postsLimit || 100, 100),
             offset: 0,
             filter: 'all'
         }, token);
 
-        if (res.error) {
-            log('Ошибка получения постов стены: ' + res.error.error_msg, 'err');
-            return [];
+        if (postsRes.error) {
+            log('Ошибка получения постов: ' + postsRes.error.error_msg, 'err');
+            return activeSet;
         }
 
-        return res.response.items || [];
-    }
+        const posts = postsRes.response.items || [];
+        if (posts.length === 0) {
+            log('На стене нет постов', 'warn');
+            return activeSet;
+        }
 
-    // Проверка активности КОНКРЕТНОГО друга на моей стене
-    async function checkFriendActivityOnMyWall(friendId, token, myPosts) {
-        let activity = {
-            userId: friendId,
-            likedPosts: 0,
-            likedComments: 0,
-            comments: 0,
-            lastActivity: null,
-            hasActivity: false
-        };
+        log(`Получено ${posts.length} постов со стены`, 'info');
+        updateStat('checked-posts', posts.length);
 
-        const delays = getDelays();
+        let postIndex = 0;
+        totalToProcess = posts.length;
+        startTime = Date.now();
 
-        try {
-            for (const post of myPosts) {
-                if (!isRunning) break;
+        for (const post of posts) {
+            if (!isRunning || abortFlag) break;
 
-                // Проверяем, лайкнул ли друг этот пост
-                const likeRes = await vkCall('likes.isLiked', {
-                    user_id: friendId,
-                    type: 'post',
-                    item_id: post.id,
-                    owner_id: myId
-                }, token);
+            postIndex++;
+            processedCount = postIndex;
+            const percent = (postIndex / posts.length) * 100;
+            updateProgress(percent);
 
-                if (likeRes.response && likeRes.response.liked === 1) {
-                    activity.likedPosts++;
-                    activity.hasActivity = true;
-                    activity.lastActivity = new Date(post.date * 1000).toISOString();
+            // 1. Собираем лайки поста
+            const likesRes = await vkCall('likes.getList', {
+                type: 'post',
+                owner_id: myId,
+                item_id: post.id,
+                count: 1000,
+                filter: 'likes'
+            }, token);
+
+            if (!likesRes.error && likesRes.response) {
+                const likers = likesRes.response.items || [];
+                for (const likerId of likers) {
+                    activeSet.add(likerId);
                 }
-
-                await sleep(delays.betweenLikes);
-
-                // Проверяем комментарии друга под этим постом
-                const commentRes = await vkCall('wall.getComments', {
-                    owner_id: myId,
-                    post_id: post.id,
-                    count: 100
-                }, token);
-
-                if (!commentRes.error && commentRes.response) {
-                    const comments = commentRes.response.items || [];
-                    for (const comment of comments) {
-                        if (comment.from_id === friendId) {
-                            activity.comments++;
-                            activity.hasActivity = true;
-                            activity.lastActivity = new Date(comment.date * 1000).toISOString();
-                        }
-                        // Проверяем, лайкнул ли друг комментарий
-                        if (comment.likes && comment.likes.user_likes === 1 && comment.from_id === friendId) {
-                            activity.likedComments++;
-                            activity.hasActivity = true;
-                            activity.lastActivity = new Date(comment.date * 1000).toISOString();
-                        }
-                    }
-                }
-
-                await sleep(delays.betweenComments);
+                log(`Пост ${postIndex}/${posts.length}: +${likers.length} лайков`, 'info');
             }
 
-            return activity;
+            await sleep(delays.betweenPosts);
 
-        } catch (e) {
-            log(`Ошибка проверки друга ${friendId}: ${e.message}`, 'warn');
-            return activity;
+            // 2. Собираем комментарии поста
+            const commentsRes = await vkCall('wall.getComments', {
+                owner_id: myId,
+                post_id: post.id,
+                count: 100,
+                offset: 0
+            }, token);
+
+            if (!commentsRes.error && commentsRes.response) {
+                const comments = commentsRes.response.items || [];
+                for (const comment of comments) {
+                    // Автор комментария
+                    activeSet.add(comment.from_id);
+                    // Лайкнувшие комментарий
+                    if (comment.likes && comment.likes.count > 0) {
+                        const likeListRes = await vkCall('likes.getList', {
+                            type: 'comment',
+                            owner_id: myId,
+                            item_id: comment.id,
+                            count: 1000,
+                            filter: 'likes'
+                        }, token);
+                        if (!likeListRes.error && likeListRes.response) {
+                            const commentLikers = likeListRes.response.items || [];
+                            for (const likerId of commentLikers) {
+                                activeSet.add(likerId);
+                            }
+                        }
+                        await sleep(delays.betweenLikes);
+                    }
+                }
+                log(`Пост ${postIndex}/${posts.length}: +${comments.length} комментариев`, 'info');
+            }
+
+            await sleep(delays.betweenPosts);
         }
+
+        log(`Собрано активных пользователей: ${activeSet.size}`, 'success');
+        return activeSet;
     }
 
+    // ==================== ШАГ 4: Сравнение и вывод ====================
+    function findInactiveFriends(friends, activeSet) {
+        const inactive = [];
+        for (const friend of friends) {
+            if (!activeSet.has(friend.id)) {
+                inactive.push(friend);
+            }
+        }
+        return inactive;
+    }
+
+    // ==================== ГЛАВНЫЙ ПРОЦЕСС ====================
     async function startAnalysis() {
         if (isRunning) return;
 
@@ -661,9 +735,11 @@
         isRunning = true;
         document.getElementById('startBtn').disabled = true;
         logDiv.innerHTML = '';
-        log(`Начинаем анализ активности друзей на вашей стене...`, 'info');
+        document.getElementById('statsGrid').style.display = 'none';
+
+        log(`🚀 Запуск анализа v4.0`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
-        setStatus('Получение ID...');
+        setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
         startTime = null;
@@ -675,7 +751,7 @@
         }
 
         try {
-            // 1. Получаем ID владельца токена
+            // ===== ШАГ 1: Получаем ID =====
             const ownerId = await getMyId(token);
             if (!ownerId) {
                 isRunning = false;
@@ -683,90 +759,64 @@
                 document.getElementById('startBtn').disabled = false;
                 return;
             }
-            log(`ID владельца токена: ${ownerId}`, 'info');
 
-            // 2. Получаем посты со стены
-            setStatus('Загрузка постов со стены...');
-            const myPosts = await getMyWallPosts(token, postsLimit);
-            if (myPosts.length === 0) {
-                log('На стене нет постов для проверки', 'warn');
-                isRunning = false;
-                setStatus('Нет постов');
-                document.getElementById('startBtn').disabled = false;
-                return;
-            }
-            updateStat('checked-posts', myPosts.length);
-            log(`Загружено ${myPosts.length} постов с вашей стены`, 'info');
-
-            // 3. Получаем всех друзей
-            setStatus('Загрузка друзей...');
-            const friends = await getAllFriends(token);
-            if (!friends) {
+            // ===== ШАГ 2: Собираем всех друзей =====
+            setStatus('Сбор базы друзей...');
+            allFriends = await collectAllFriends(token);
+            if (!allFriends) {
                 isRunning = false;
                 setStatus('Ошибка');
                 document.getElementById('startBtn').disabled = false;
                 return;
             }
 
-            log(`Загружено ${friends.length} друзей. Начинаем проверку активности...`, 'info');
-            setStatus('Анализ активности...');
-
-            totalToProcess = friends.length;
-            startTime = Date.now();
-
-            etaInterval = setInterval(updateETA, 2000);
-
-            const results = [];
-            let checked = 0;
-
-            for (const friend of friends) {
-                if (!isRunning || abortFlag) break;
-
-                const activity = await checkFriendActivityOnMyWall(friend.id, token, myPosts);
-                const userData = {
-                    ...friend,
-                    activity: activity,
-                    isActive: activity.hasActivity
-                };
-                results.push(userData);
-                checked++;
-                processedCount = checked;
-
-                updateStat('checked-friends', checked);
-                const inactiveCount = results.filter(r => !r.isActive).length;
-                updateStat('inactive-count', inactiveCount);
-
-                const percent = (checked / totalToProcess) * 100;
-                updateProgress(percent);
-
-                if (checked % 10 === 0) {
-                    log(`Проверено ${checked}/${totalToProcess} друзей. Неактивных: ${inactiveCount}`, 'info');
-                }
-
-                const delays = getDelays();
-                await sleep(delays.betweenUsers);
+            if (allFriends.length === 0) {
+                log('У вас нет друзей', 'warn');
+                isRunning = false;
+                setStatus('Нет друзей');
+                document.getElementById('startBtn').disabled = false;
+                return;
             }
 
-            if (etaInterval) {
-                clearInterval(etaInterval);
-                etaInterval = null;
+            // ===== ШАГ 3: Собираем активных =====
+            setStatus('Сбор базы активных...');
+            activeUsers = await collectActiveUsers(token, postsLimit);
+
+            if (!isRunning || abortFlag) {
+                log('Анализ прерван', 'warn');
+                isRunning = false;
+                setStatus('Прерван');
+                document.getElementById('startBtn').disabled = false;
+                return;
             }
 
-            allUsers = results;
-            // Только те, у кого НЕТ активности на моей стене
-            inactiveUsers = results.filter(r => !r.isActive);
-            filteredUsers = [...inactiveUsers];
+            // ===== ШАГ 4: Сравниваем =====
+            setStatus('Сравнение баз...');
+            setStage('Сравнение');
+
+            const inactive = findInactiveFriends(allFriends, activeUsers);
+            inactiveUsers = inactive;
+
+            // ===== ВЫВОД =====
+            const statsGrid = document.getElementById('statsGrid');
+            statsGrid.style.display = 'grid';
+            document.getElementById('statTotal').textContent = allFriends.length;
+            document.getElementById('statActive').textContent = activeUsers.size;
+            document.getElementById('statInactive').textContent = inactive.length;
 
             updateProgress(100, 'завершено');
-            log(`✅ Анализ завершён! Всего друзей: ${results.length}`, 'success');
-            log(`   Активных (реагируют на ваши посты): ${results.length - inactiveUsers.length}`, 'success');
-            log(`   Неактивных (не реагируют): ${inactiveUsers.length}`, 'warn');
+
+            log(`✅ Анализ завершён!`, 'success');
+            log(`   Всего друзей: ${allFriends.length}`, 'info');
+            log(`   Активных: ${activeUsers.size}`, 'success');
+            log(`   Неактивных: ${inactive.length}`, 'warn');
+
             setStatus('Готово');
             currentPage = 1;
             renderPage();
 
         } catch (e) {
-            log('Критическая ошибка: ' + e.message, 'err');
+            log('Ошибка: ' + e.message, 'err');
             isRunning = false;
             setStatus('Ошибка');
             if (etaInterval) {
@@ -779,6 +829,7 @@
         isRunning = false;
     }
 
+    // ==================== ОТРИСОВКА ====================
     function renderPage() {
         const search = document.getElementById('searchInput').value.toLowerCase();
 
@@ -805,7 +856,7 @@
 
         const container = document.getElementById('user-list');
         if (filteredUsers.length === 0) {
-            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны! Никто не пропустил ни одного вашего поста.' : 'Нет пользователей, соответствующих поиску'}</div>`;
+            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих поиску'}</div>`;
             return;
         }
 
@@ -813,17 +864,13 @@
         for (const user of pageUsers) {
             const avatar = user.photo_50 || '';
             const name = (user.first_name || '') + ' ' + (user.last_name || '');
-            const activity = user.activity;
 
             html += `
                 <div class="user-card">
                     <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : ''}</div>
                     <div class="info">
-                        <div class="name">${name} <span class="badge">не реагирует</span></div>
+                        <div class="name">${name} <span class="badge">неактивен</span></div>
                         <div class="details">
-                            <span>❤️ лайков: ${activity.likedPosts || 0}</span>
-                            <span>💬 комментов: ${activity.comments || 0}</span>
-                            <span>👍 лайков комм: ${activity.likedComments || 0}</span>
                             <span>ID: ${user.id}</span>
                         </div>
                     </div>
@@ -850,10 +897,11 @@
     function keepUser(userId) {
         if (confirm('Оставить пользователя в друзьях?')) {
             inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
-            allUsers = allUsers.filter(u => u.id !== userId);
+            allFriends = allFriends.filter(u => u.id !== userId);
             renderPage();
-            updateStat('inactive-count', inactiveUsers.length);
-            log(`Пользователь ${userId} оставлен в друзьях`, 'success');
+            document.getElementById('statInactive').textContent = inactiveUsers.length;
+            document.getElementById('statTotal').textContent = allFriends.length;
+            log(`Пользователь ${userId} оставлен`, 'success');
         }
     }
 
@@ -863,17 +911,18 @@
                 try {
                     const res = await vkCall('friends.delete', { user_id: userId }, currentToken);
                     if (res.response && (res.response.success === 1 || res.response === 1)) {
-                        log(`✅ Пользователь ${userId} удалён из друзей`, 'success');
+                        log(`✅ Пользователь ${userId} удалён`, 'success');
                         inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
-                        allUsers = allUsers.filter(u => u.id !== userId);
+                        allFriends = allFriends.filter(u => u.id !== userId);
                         renderPage();
-                        updateStat('inactive-count', inactiveUsers.length);
+                        document.getElementById('statInactive').textContent = inactiveUsers.length;
+                        document.getElementById('statTotal').textContent = allFriends.length;
                     } else {
-                        log(`❌ Не удалось удалить ${userId}: ${res.error?.error_msg || 'неизвестная ошибка'}`, 'err');
-                        alert('Не удалось удалить пользователя. Возможно, он уже не в друзьях.');
+                        log(`❌ Ошибка удаления ${userId}`, 'err');
+                        alert('Не удалось удалить пользователя.');
                     }
                 } catch (e) {
-                    log(`Ошибка удаления ${userId}: ${e.message}`, 'err');
+                    log(`Ошибка: ${e.message}`, 'err');
                     alert('Ошибка при удалении');
                 }
             })();
