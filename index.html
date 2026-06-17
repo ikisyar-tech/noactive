@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.0 (Hints Edition)</title>
+    <title>VK Activity Checker v6.1 (Hints Fixed)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -196,14 +196,14 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.0</h2>
-    <p class="desc">Умная сортировка на основе алгоритма ВКонтакте (Hints)</p>
+    <h2>VK Activity Checker v6.1</h2>
+    <p class="desc">Исправленный Hints Engine (Обход ограничений VK API)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">🔑 ЛОГИН НА BARKOV</button>
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/gettoken.aspx?a=get&m=f&s=friends', '_blank')">🔑 ПОЛУЧИТЬ ТОКЕН</button>
         <div class="instruction">
-            <b>Инструкция:</b> Логинимся ➡️ Получаем токен ➡️ Копируем адресную строку ➡️ Вставляем ниже.
+            <b>Инструкция:</b> Авторизуемся ➡️ Получаем токен ➡️ Копируем адресную строку ➡️ Вставляем ниже.
         </div>
     </div>
 
@@ -289,7 +289,6 @@
     let startTime = null;
     let processedCount = 0;
     let totalToProcess = 0;
-    let etaInterval = null;
 
     const logDiv = document.getElementById('log');
     function safeUpdate(id, value) {
@@ -299,8 +298,8 @@
 
     function getDelays() {
         return currentMode === 'safe' ? 
-            { friends: 1000, posts: 500, likes: 200 } : 
-            { friends: 500, posts: 250, likes: 100 };
+            { friends: 400, posts: 400, likes: 200 } : 
+            { friends: 200, posts: 200, likes: 100 };
     }
 
     function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
@@ -324,12 +323,6 @@
         if (etaText && eta !== null) {
             etaText.textContent = eta === 'завершено' ? '✅ Завершено!' : (eta === 'остановлено' ? '⏹ Остановлено' : '⏳ ~' + eta);
         }
-    }
-
-    function formatTime(seconds) {
-        if (seconds < 60) return Math.round(seconds) + ' сек';
-        const mins = Math.floor(seconds / 60);
-        return mins + ' мин ' + Math.round(seconds % 60) + ' сек';
     }
 
     function getTokenFromInput() {
@@ -378,7 +371,6 @@
         document.getElementById('startBtn').disabled = false;
     }
 
-    // Сортировка на основе сохраненного индекса hints
     function applyOrderAndRender() {
         inactiveUsers.sort((a, b) => {
             return currentOrder === 'low' ? b.hintsIndex - a.hintsIndex : a.hintsIndex - b.hintsIndex;
@@ -395,39 +387,61 @@
         return myId;
     }
 
-    // Сбор друзей с явной сортировкой по hints
+    // ИСПРАВЛЕННЫЙ двухэтапный сбор друзей для Hints
     async function collectAllFriends(token) {
-        let all = [];
-        let offset = 0;
-        const count = 1000;
-        let hasMore = true;
+        setStage('Сбор топа Hints');
+        log(`Запрашиваем упорядоченные ID через чистый hints...`, 'info');
+        
+        // 1. Получаем СТРОГО упорядоченный список ID без fields (иначе ВК игнорит hints)
+        const hintsRes = await vkCall('friends.get', {
+            sort: 'hints',
+            count: 10000 
+        }, token);
+        
+        if (hintsRes.error) { log('Ошибка получения Hints: ' + hintsRes.error.error_msg, 'err'); return null; }
+        
+        const orderedIds = hintsRes.response.items || [];
+        log(`Получено ${orderedIds.length} ID в порядке релевантности. Загружаем профили батчами...`, 'info');
+        if (orderedIds.length === 0) return [];
+
+        // 2. Добираем инфу (аватарки, имена) через безопасные батчи users.get по 300 штук
+        let profilesMap = new Map();
+        const chunkSize = 300;
         const delays = getDelays();
 
-        setStage('Сбор топа Hints');
-        while (hasMore && isRunning) {
-            log(`Загрузка списка друзей (смещение ${offset})...`, 'info');
-            const res = await vkCall('friends.get', {
-                fields: 'photo_50,first_name,last_name,deactivated',
-                sort: 'hints', // Используем алгоритмический рейтинг ВК
-                count: count,
-                offset: offset
+        for (let i = 0; i < orderedIds.length; i += chunkSize) {
+            if (!isRunning || abortFlag) break;
+            const chunk = orderedIds.slice(i, i + chunkSize);
+            log(`Загрузка профилей: ${i} - ${Math.min(i + chunkSize, orderedIds.length)}...`, 'info');
+            
+            const usersRes = await vkCall('users.get', {
+                user_ids: chunk.join(','),
+                fields: 'photo_50,deactivated'
             }, token);
-            
-            if (res.error) { log('Ошибка VK API: ' + res.error.error_msg, 'err'); return null; }
 
-            const items = res.response.items || [];
-            
-            // Важно: запоминаем позицию в рейтинге hints
-            items.forEach((item, index) => {
-                item.hintsIndex = offset + index;
+            if (usersRes.error) {
+                log('Ошибка загрузки группы профилей: ' + usersRes.error.error_msg, 'warn');
+                continue;
+            }
+
+            (usersRes.response || []).forEach(user => {
+                profilesMap.set(user.id, user);
             });
 
-            all = all.concat(items);
-            if (items.length < count) hasMore = false;
-            else { offset += count; await sleep(delays.friends); }
+            await sleep(delays.friends);
         }
 
-        return all.filter(f => !f.deactivated);
+        // 3. Собираем итоговый массив, жестко сохраняя порядок из orderedIds
+        let finalOrderedFriends = [];
+        orderedIds.forEach((id, index) => {
+            const profile = profilesMap.get(id);
+            if (profile) {
+                profile.hintsIndex = index; // Сохраняем реальную позицию в топе
+                finalOrderedFriends.push(profile);
+            }
+        });
+
+        return finalOrderedFriends.filter(f => !f.deactivated);
     }
 
     async function collectActiveUsers(token, postsLimit) {
@@ -447,21 +461,20 @@
 
         log(`Сканируем активность в ${posts.length} постах...`, 'info');
         let postIndex = 0;
-        startTime = Date.now();
 
         for (const post of posts) {
             if (!isRunning || abortFlag) break;
             postIndex++;
             updateProgress((postIndex / posts.length) * 100);
 
-            // Сбор лайков
+            // Лайки
             const likesRes = await vkCall('likes.getList', { type: 'post', owner_id: myId, item_id: post.id, count: 1000 }, token);
             if (!likesRes.error && likesRes.response) {
                 (likesRes.response.items || []).forEach(id => activeSet.add(id));
             }
             await sleep(delays.likes);
 
-            // Сбор комментариев
+            // Комменты
             const commentsRes = await vkCall('wall.getComments', { owner_id: myId, post_id: post.id, count: 100 }, token);
             if (!commentsRes.error && commentsRes.response) {
                 (commentsRes.response.items || []).forEach(c => activeSet.add(c.from_id));
@@ -483,7 +496,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
         
-        log(`🚀 Запуск анализа v6.0 (Hints Engine)`, 'info');
+        log(`🚀 Запуск анализа v6.1 (Hints Fixed Engine)`, 'info');
         setStatus('Запуск...');
 
         try {
@@ -547,7 +560,7 @@
                     <div class="info">
                         <div class="name">
                             ${user.first_name} ${user.last_name}
-                            <span class="friend-badge">Mесто в Hints: #${user.hintsIndex + 1}</span>
+                            <span class="friend-badge">Важность в Hints: #${user.hintsIndex + 1}</span>
                             <span class="friend-order">#${pos}</span>
                         </div>
                         <div class="details"><span>ID: ${user.id}</span></div>
