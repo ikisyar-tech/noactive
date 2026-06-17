@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v2.0</title>
+    <title>VK Activity Checker v2.1</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -73,6 +73,7 @@
         }
         button:active { transform: scale(0.98); }
         .btn-start { background: #4a76a8; color: white; }
+        .btn-start:disabled { background: #95a5a6; cursor: not-allowed; }
         .btn-stop { background: #faebeb; color: #e74c3c; }
         .btn-login { background: #f39c12; color: white; width: 100%; margin-top: 6px; }
         .btn-danger { background: #e74c3c; color: white; }
@@ -90,19 +91,39 @@
         }
         .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; color: #34495e; }
         .stat-val { font-weight: bold; color: #4a76a8; }
+        .stat-val.time { color: #e67e22; font-family: monospace; }
+        .progress-container {
+            margin-top: 10px;
+        }
         .progress-bar {
             width: 100%;
-            height: 6px;
+            height: 8px;
             background: #ecf0f1;
-            border-radius: 3px;
-            margin-top: 10px;
+            border-radius: 4px;
             overflow: hidden;
+            position: relative;
         }
         .progress-fill {
             height: 100%;
-            background: #4a76a8;
+            background: linear-gradient(90deg, #4a76a8, #3498db);
             width: 0%;
-            transition: width 0.3s;
+            transition: width 0.5s ease;
+            border-radius: 4px;
+        }
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 12px;
+            color: #7f8c8d;
+        }
+        .progress-info .percent {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+        .progress-info .eta {
+            color: #e67e22;
         }
 
         .user-card {
@@ -254,6 +275,7 @@
         }
         .mode-selector .active-mode {
             border: 3px solid #2c3e50;
+            transform: scale(1.02);
         }
 
         @media (max-width: 600px) {
@@ -269,7 +291,7 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v2.0</h2>
+    <h2>VK Activity Checker v2.1</h2>
     <p class="desc">Анализ активности друзей. Показывает только неактивных.</p>
 
     <div class="barkov-box">
@@ -315,9 +337,17 @@
         <div class="stat-row"><span>Статус:</span> <span id="status-text" class="stat-val">Ожидание</span></div>
         <div class="stat-row"><span>Режим:</span> <span id="mode-text" class="stat-val">Безопасный</span></div>
         <div class="stat-row"><span>Всего друзей:</span> <span id="total-friends" class="stat-val">0</span></div>
-        <div class="stat-row"><span>Проверено постов:</span> <span id="checked-posts" class="stat-val">0</span></div>
+        <div class="stat-row"><span>Проверено:</span> <span id="checked-count" class="stat-val">0</span></div>
         <div class="stat-row"><span>Неактивных:</span> <span id="inactive-count" class="stat-val">0</span></div>
-        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-container">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-info">
+                <span class="percent" id="percentText">0.0%</span>
+                <span class="eta" id="etaText">⏳ Ожидание...</span>
+            </div>
+        </div>
     </div>
 
     <div class="filter-bar">
@@ -346,12 +376,17 @@
     let filteredUsers = [];
     let currentPage = 1;
     const PAGE_SIZE = 20;
-    let currentMode = 'safe'; // 'safe' или 'normal'
+    let currentMode = 'safe';
     let abortFlag = false;
+
+    // Для расчёта ETA
+    let startTime = null;
+    let processedCount = 0;
+    let totalToProcess = 0;
+    let etaInterval = null;
 
     const logDiv = document.getElementById('log');
 
-    // Задержки в зависимости от режима
     function getDelays() {
         if (currentMode === 'safe') {
             return {
@@ -384,7 +419,53 @@
 
     function updateStat(id, val) { document.getElementById(id).innerText = val; }
     function setStatus(text) { document.getElementById('status-text').innerText = text; }
-    function updateProgress(percent) { document.getElementById('progressFill').style.width = Math.min(100, percent) + '%'; }
+
+    function updateProgress(percent, eta = null) {
+        const fill = document.getElementById('progressFill');
+        const percentText = document.getElementById('percentText');
+        const etaText = document.getElementById('etaText');
+
+        fill.style.width = Math.min(100, percent) + '%';
+        percentText.textContent = percent.toFixed(1) + '%';
+
+        if (eta !== null) {
+            if (eta === 'завершено') {
+                etaText.textContent = '✅ Завершено!';
+            } else if (eta === 'остановлено') {
+                etaText.textContent = '⏹ Остановлено';
+            } else {
+                etaText.textContent = '⏳ ~' + eta;
+            }
+        }
+    }
+
+    function formatTime(seconds) {
+        if (seconds < 60) return Math.round(seconds) + ' сек';
+        if (seconds < 3600) {
+            const mins = Math.floor(seconds / 60);
+            const secs = Math.round(seconds % 60);
+            return mins + ' мин ' + secs + ' сек';
+        }
+        const hours = Math.floor(seconds / 3600);
+        const mins = Math.floor((seconds % 3600) / 60);
+        return hours + ' ч ' + mins + ' мин';
+    }
+
+    function updateETA() {
+        if (!startTime || processedCount === 0 || processedCount >= totalToProcess) {
+            return;
+        }
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        const rate = processedCount / elapsed;
+        const remaining = totalToProcess - processedCount;
+        const etaSeconds = remaining / rate;
+
+        if (isFinite(etaSeconds) && etaSeconds > 0) {
+            const percent = (processedCount / totalToProcess) * 100;
+            updateProgress(percent, formatTime(etaSeconds));
+        }
+    }
 
     function getTokenFromInput() {
         const raw = document.getElementById('tokenInput').value.trim();
@@ -417,11 +498,16 @@
     function stopAnalysis() {
         isRunning = false;
         abortFlag = true;
+        if (etaInterval) {
+            clearInterval(etaInterval);
+            etaInterval = null;
+        }
+        updateProgress(0, 'остановлено');
         log('Анализ остановлен пользователем', 'warn');
         setStatus('Остановлен');
+        document.getElementById('startBtn').disabled = false;
     }
 
-    // Получение всех друзей с пагинацией
     async function getAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -457,7 +543,6 @@
         return all.filter(f => !f.deactivated);
     }
 
-    // Получение активности пользователя на стене
     async function getUserActivity(userId, token, postsLimit) {
         let activity = {
             userId: userId,
@@ -553,25 +638,41 @@
         const delays = getDelays();
 
         isRunning = true;
+        document.getElementById('startBtn').disabled = true;
         logDiv.innerHTML = '';
         log(`Начинаем анализ в режиме: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         setStatus('Загрузка друзей...');
-        updateProgress(0);
+        updateProgress(0, 'загрузка...');
+
+        // Сброс ETA
+        startTime = null;
+        processedCount = 0;
+        totalToProcess = 0;
+        if (etaInterval) {
+            clearInterval(etaInterval);
+            etaInterval = null;
+        }
 
         try {
             const friends = await getAllFriends(token);
             if (!friends) {
                 isRunning = false;
                 setStatus('Ошибка');
+                document.getElementById('startBtn').disabled = false;
                 return;
             }
 
             log(`Загружено ${friends.length} друзей. Начинаем проверку активности...`, 'info');
             setStatus('Анализ активности...');
 
+            totalToProcess = friends.length;
+            startTime = Date.now();
+
+            // Запускаем обновление ETA
+            etaInterval = setInterval(updateETA, 2000);
+
             const results = [];
             let checked = 0;
-            const total = friends.length;
 
             for (const friend of friends) {
                 if (!isRunning || abortFlag) break;
@@ -584,24 +685,34 @@
                 };
                 results.push(userData);
                 checked++;
+                processedCount = checked;
 
-                updateStat('checked-posts', postsLimit);
+                updateStat('checked-count', checked);
                 const inactiveCount = results.filter(r => !r.isActive).length;
                 updateStat('inactive-count', inactiveCount);
-                updateProgress((checked / total) * 100);
+
+                // Обновляем прогресс
+                const percent = (checked / totalToProcess) * 100;
+                updateProgress(percent);
 
                 if (checked % 10 === 0) {
-                    log(`Проверено ${checked}/${total} друзей. Неактивных: ${inactiveCount}`, 'info');
+                    log(`Проверено ${checked}/${totalToProcess} друзей. Неактивных: ${inactiveCount}`, 'info');
                 }
 
                 await sleep(delays.betweenUsers);
             }
 
+            // Останавливаем ETA
+            if (etaInterval) {
+                clearInterval(etaInterval);
+                etaInterval = null;
+            }
+
             allUsers = results;
-            // Сохраняем только неактивных
             inactiveUsers = results.filter(r => !r.isActive);
             filteredUsers = [...inactiveUsers];
 
+            updateProgress(100, 'завершено');
             log(`✅ Анализ завершён! Всего друзей: ${results.length}, Неактивных: ${inactiveUsers.length}`, 'success');
             setStatus('Готово');
             currentPage = 1;
@@ -611,7 +722,14 @@
             log('Критическая ошибка: ' + e.message, 'err');
             isRunning = false;
             setStatus('Ошибка');
+            if (etaInterval) {
+                clearInterval(etaInterval);
+                etaInterval = null;
+            }
         }
+
+        document.getElementById('startBtn').disabled = false;
+        isRunning = false;
     }
 
     function renderPage() {
@@ -625,7 +743,6 @@
             return true;
         });
 
-        // Сортировка: самые ранние добавленные (по id)
         filteredUsers.sort((a, b) => a.id - b.id);
 
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
@@ -686,7 +803,6 @@
 
     function keepUser(userId) {
         if (confirm('Оставить пользователя в друзьях?')) {
-            // Удаляем из списка неактивных
             inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
             allUsers = allUsers.filter(u => u.id !== userId);
             renderPage();
@@ -697,7 +813,6 @@
 
     function removeUser(userId) {
         if (confirm(`Удалить пользователя ${userId} из друзей?`)) {
-            // Пытаемся удалить через API
             (async () => {
                 try {
                     const res = await vkCall('friends.delete', { user_id: userId }, currentToken);
@@ -719,7 +834,6 @@
         }
     }
 
-    // Инициализация
     setMode('safe');
 </script>
 
