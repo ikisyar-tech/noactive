@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.0</title>
+    <title>VK Activity Checker v4.1</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -315,7 +315,7 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.0</h2>
+    <h2>VK Activity Checker v4.1</h2>
     <p class="desc">Сравнивает базу друзей с базой активных пользователей</p>
 
     <div class="barkov-box">
@@ -330,8 +330,8 @@
             1. Нажмите «Логин на Barkov» и авторизуйтесь.<br>
             2. Затем нажмите «Получить токен» и разрешите доступ.<br>
             3. Скопируйте <b>всю ссылку</b> из адресной строки браузера.<br>
-            4. Вставьте её в поле ниже (можно также только токен после <b>access_token=</b>).<br>
-            5. Выберите режим и количество постов для проверки.<br>
+            4. Вставьте её в поле ниже.<br>
+            5. Выберите режим и количество постов.<br>
             6. Нажмите «Начать анализ».
         </div>
     </div>
@@ -409,10 +409,9 @@
     let currentToken = '';
     let myId = null;
 
-    // Базы данных
-    let allFriends = [];        // Все друзья {id, first_name, last_name, photo_50}
-    let activeUsers = new Set(); // ID активных пользователей
-    let inactiveUsers = [];     // Результат: друзья - активные
+    let allFriends = [];
+    let activeUsers = new Set();
+    let inactiveUsers = [];
 
     let filteredUsers = [];
     let currentPage = 1;
@@ -424,9 +423,14 @@
     let processedCount = 0;
     let totalToProcess = 0;
     let etaInterval = null;
-    let currentStage = '';
 
     const logDiv = document.getElementById('log');
+
+    // ============ БЕЗОПАСНОЕ ОБНОВЛЕНИЕ DOM ============
+    function safeUpdate(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.innerText = value;
+    }
 
     function getDelays() {
         if (currentMode === 'safe') {
@@ -460,19 +464,18 @@
         logDiv.appendChild(div);
     }
 
-    function updateStat(id, val) { document.getElementById(id).innerText = val; }
-    function setStatus(text) { document.getElementById('status-text').innerText = text; }
-    function setStage(text) { document.getElementById('stage-text').innerText = text; currentStage = text; }
+    function setStatus(text) { safeUpdate('status-text', text); }
+    function setStage(text) { safeUpdate('stage-text', text); }
 
     function updateProgress(percent, eta = null) {
         const fill = document.getElementById('progressFill');
         const percentText = document.getElementById('percentText');
         const etaText = document.getElementById('etaText');
 
-        fill.style.width = Math.min(100, percent) + '%';
-        percentText.textContent = percent.toFixed(1) + '%';
+        if (fill) fill.style.width = Math.min(100, percent) + '%';
+        if (percentText) percentText.textContent = percent.toFixed(1) + '%';
 
-        if (eta !== null) {
+        if (etaText && eta !== null) {
             if (eta === 'завершено') {
                 etaText.textContent = '✅ Завершено!';
             } else if (eta === 'остановлено') {
@@ -521,7 +524,9 @@
             const cbName = 'vk_' + Math.random().toString(16).slice(2);
             window[cbName] = (data) => {
                 delete window[cbName];
-                document.body.removeChild(script);
+                if (document.body.contains(script)) {
+                    document.body.removeChild(script);
+                }
                 resolve(data);
             };
             const script = document.createElement('script');
@@ -533,9 +538,11 @@
 
     function setMode(mode) {
         currentMode = mode;
-        document.getElementById('mode-text').innerText = mode === 'safe' ? 'Безопасный' : 'Обычный';
-        document.getElementById('modeSafe').className = 'btn-mode-safe' + (mode === 'safe' ? ' active-mode' : '');
-        document.getElementById('modeNormal').className = 'btn-mode-normal' + (mode === 'normal' ? ' active-mode' : '');
+        safeUpdate('mode-text', mode === 'safe' ? 'Безопасный' : 'Обычный');
+        const safeBtn = document.getElementById('modeSafe');
+        const normalBtn = document.getElementById('modeNormal');
+        if (safeBtn) safeBtn.className = 'btn-mode-safe' + (mode === 'safe' ? ' active-mode' : '');
+        if (normalBtn) normalBtn.className = 'btn-mode-normal' + (mode === 'normal' ? ' active-mode' : '');
         log(`Режим: ${mode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
     }
 
@@ -549,10 +556,11 @@
         updateProgress(0, 'остановлено');
         log('Анализ остановлен', 'warn');
         setStatus('Остановлен');
-        document.getElementById('startBtn').disabled = false;
+        const startBtn = document.getElementById('startBtn');
+        if (startBtn) startBtn.disabled = false;
     }
 
-    // ==================== ШАГ 1: Получение ID владельца ====================
+    // ============ ШАГ 1: ID владельца ============
     async function getMyId(token) {
         if (myId) return myId;
         const res = await vkCall('users.get', {}, token);
@@ -565,7 +573,7 @@
         return myId;
     }
 
-    // ==================== ШАГ 2: Сбор базы друзей ====================
+    // ============ ШАГ 2: Сбор друзей ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -590,7 +598,7 @@
 
             const items = res.response.items || [];
             all = all.concat(items);
-            updateStat('total-friends', all.length);
+            safeUpdate('total-friends', all.length);
 
             if (items.length < count) {
                 hasMore = false;
@@ -600,20 +608,18 @@
             }
         }
 
-        // Убираем удалённые/заблокированные
         const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length} (удалённых: ${all.length - filtered.length})`, 'info');
+        log(`Собрано друзей: ${filtered.length}`, 'info');
         return filtered;
     }
 
-    // ==================== ШАГ 3: Сбор активных пользователей ====================
+    // ============ ШАГ 3: Сбор активных ============
     async function collectActiveUsers(token, postsLimit) {
         const activeSet = new Set();
         const delays = getDelays();
 
         setStage('Сбор базы активных');
 
-        // Получаем посты со стены
         const postsRes = await vkCall('wall.get', {
             owner_id: myId,
             count: Math.min(postsLimit || 100, 100),
@@ -632,8 +638,8 @@
             return activeSet;
         }
 
-        log(`Получено ${posts.length} постов со стены`, 'info');
-        updateStat('checked-posts', posts.length);
+        log(`Получено ${posts.length} постов`, 'info');
+        safeUpdate('checked-posts', posts.length);
 
         let postIndex = 0;
         totalToProcess = posts.length;
@@ -647,7 +653,7 @@
             const percent = (postIndex / posts.length) * 100;
             updateProgress(percent);
 
-            // 1. Собираем лайки поста
+            // Лайки поста
             const likesRes = await vkCall('likes.getList', {
                 type: 'post',
                 owner_id: myId,
@@ -666,7 +672,7 @@
 
             await sleep(delays.betweenPosts);
 
-            // 2. Собираем комментарии поста
+            // Комментарии
             const commentsRes = await vkCall('wall.getComments', {
                 owner_id: myId,
                 post_id: post.id,
@@ -677,9 +683,7 @@
             if (!commentsRes.error && commentsRes.response) {
                 const comments = commentsRes.response.items || [];
                 for (const comment of comments) {
-                    // Автор комментария
                     activeSet.add(comment.from_id);
-                    // Лайкнувшие комментарий
                     if (comment.likes && comment.likes.count > 0) {
                         const likeListRes = await vkCall('likes.getList', {
                             type: 'comment',
@@ -703,11 +707,11 @@
             await sleep(delays.betweenPosts);
         }
 
-        log(`Собрано активных пользователей: ${activeSet.size}`, 'success');
+        log(`Собрано активных: ${activeSet.size}`, 'success');
         return activeSet;
     }
 
-    // ==================== ШАГ 4: Сравнение и вывод ====================
+    // ============ ШАГ 4: Сравнение ============
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -718,7 +722,7 @@
         return inactive;
     }
 
-    // ==================== ГЛАВНЫЙ ПРОЦЕСС ====================
+    // ============ ГЛАВНЫЙ ПРОЦЕСС ============
     async function startAnalysis() {
         if (isRunning) return;
 
@@ -733,11 +737,12 @@
         const postsLimit = parseInt(document.getElementById('postsLimit').value) || 100;
 
         isRunning = true;
-        document.getElementById('startBtn').disabled = true;
+        const startBtn = document.getElementById('startBtn');
+        if (startBtn) startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.0`, 'info');
+        log(`🚀 Запуск анализа v4.1`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
@@ -751,22 +756,22 @@
         }
 
         try {
-            // ===== ШАГ 1: Получаем ID =====
+            // ШАГ 1
             const ownerId = await getMyId(token);
             if (!ownerId) {
                 isRunning = false;
                 setStatus('Ошибка');
-                document.getElementById('startBtn').disabled = false;
+                if (startBtn) startBtn.disabled = false;
                 return;
             }
 
-            // ===== ШАГ 2: Собираем всех друзей =====
+            // ШАГ 2
             setStatus('Сбор базы друзей...');
             allFriends = await collectAllFriends(token);
             if (!allFriends) {
                 isRunning = false;
                 setStatus('Ошибка');
-                document.getElementById('startBtn').disabled = false;
+                if (startBtn) startBtn.disabled = false;
                 return;
             }
 
@@ -774,11 +779,11 @@
                 log('У вас нет друзей', 'warn');
                 isRunning = false;
                 setStatus('Нет друзей');
-                document.getElementById('startBtn').disabled = false;
+                if (startBtn) startBtn.disabled = false;
                 return;
             }
 
-            // ===== ШАГ 3: Собираем активных =====
+            // ШАГ 3
             setStatus('Сбор базы активных...');
             activeUsers = await collectActiveUsers(token, postsLimit);
 
@@ -786,23 +791,23 @@
                 log('Анализ прерван', 'warn');
                 isRunning = false;
                 setStatus('Прерван');
-                document.getElementById('startBtn').disabled = false;
+                if (startBtn) startBtn.disabled = false;
                 return;
             }
 
-            // ===== ШАГ 4: Сравниваем =====
+            // ШАГ 4
             setStatus('Сравнение баз...');
             setStage('Сравнение');
 
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
-            // ===== ВЫВОД =====
+            // Вывод статистики
             const statsGrid = document.getElementById('statsGrid');
-            statsGrid.style.display = 'grid';
-            document.getElementById('statTotal').textContent = allFriends.length;
-            document.getElementById('statActive').textContent = activeUsers.size;
-            document.getElementById('statInactive').textContent = inactive.length;
+            if (statsGrid) statsGrid.style.display = 'grid';
+            safeUpdate('statTotal', allFriends.length);
+            safeUpdate('statActive', activeUsers.size);
+            safeUpdate('statInactive', inactive.length);
 
             updateProgress(100, 'завершено');
 
@@ -825,13 +830,14 @@
             }
         }
 
-        document.getElementById('startBtn').disabled = false;
+        if (startBtn) startBtn.disabled = false;
         isRunning = false;
     }
 
-    // ==================== ОТРИСОВКА ====================
+    // ============ ОТРИСОВКА ============
     function renderPage() {
-        const search = document.getElementById('searchInput').value.toLowerCase();
+        const searchInput = document.getElementById('searchInput');
+        const search = searchInput ? searchInput.value.toLowerCase() : '';
 
         filteredUsers = inactiveUsers.filter(user => {
             if (search) {
@@ -851,10 +857,12 @@
         const end = Math.min(start + PAGE_SIZE, filteredUsers.length);
         const pageUsers = filteredUsers.slice(start, end);
 
-        document.getElementById('resultCount').textContent = `Показано: ${start+1}-${end} из ${filteredUsers.length}`;
-        document.getElementById('pageInfo').textContent = `Страница ${currentPage} из ${totalPages || 1}`;
+        safeUpdate('resultCount', `Показано: ${start+1}-${end} из ${filteredUsers.length}`);
+        safeUpdate('pageInfo', `Страница ${currentPage} из ${totalPages || 1}`);
 
         const container = document.getElementById('user-list');
+        if (!container) return;
+
         if (filteredUsers.length === 0) {
             container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих поиску'}</div>`;
             return;
@@ -899,8 +907,8 @@
             inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
             allFriends = allFriends.filter(u => u.id !== userId);
             renderPage();
-            document.getElementById('statInactive').textContent = inactiveUsers.length;
-            document.getElementById('statTotal').textContent = allFriends.length;
+            safeUpdate('statInactive', inactiveUsers.length);
+            safeUpdate('statTotal', allFriends.length);
             log(`Пользователь ${userId} оставлен`, 'success');
         }
     }
@@ -915,8 +923,8 @@
                         inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
                         allFriends = allFriends.filter(u => u.id !== userId);
                         renderPage();
-                        document.getElementById('statInactive').textContent = inactiveUsers.length;
-                        document.getElementById('statTotal').textContent = allFriends.length;
+                        safeUpdate('statInactive', inactiveUsers.length);
+                        safeUpdate('statTotal', allFriends.length);
                     } else {
                         log(`❌ Ошибка удаления ${userId}`, 'err');
                         alert('Не удалось удалить пользователя.');
@@ -929,6 +937,7 @@
         }
     }
 
+    // Инициализация
     setMode('safe');
 </script>
 
