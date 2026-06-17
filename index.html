@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.6</title>
+    <title>VK Activity Checker v4.7 (Без сортировки по ID)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -344,8 +344,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.6</h2>
-    <p class="desc">Сортировка по дате добавления (hints) + инвертирование</p>
+    <h2>VK Activity Checker v4.7</h2>
+    <p class="desc">Порядок от VK (hints) + инвертирование. Без сортировки по ID.</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -589,7 +589,7 @@
         if (oldBtn) oldBtn.className = 'btn-order-old' + (order === 'old' ? ' active-order' : '');
         if (newBtn) newBtn.className = 'btn-order-new' + (order === 'new' ? ' active-order' : '');
         log(`Порядок: ${order === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        // Пересортировка без перезапуска (просто инвертируем)
+        // Пересортировка без перезапуска - просто инвертируем
         if (allFriends.length > 0) {
             applyOrderAndRender();
         }
@@ -609,12 +609,11 @@
         if (startBtn) startBtn.disabled = false;
     }
 
-    // ============ Применение порядка (только инвертирование) ============
+    // ============ Применение порядка (только reverse) ============
     function applyOrderAndRender() {
-        // Копируем текущий список
+        // Копируем массив, чтобы не мутировать оригинал
         let ordered = [...inactiveUsers];
-        // Если нужны старые друзья сверху — инвертируем массив
-        // Изначально VK возвращает друзей в порядке hints (сначала новые)
+        // Если нужны старые друзья сверху — инвертируем (VK отдаёт новые сверху)
         if (currentOrder === 'old') {
             ordered.reverse();
         }
@@ -637,7 +636,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей с hints ============
+    // ============ ШАГ 2: Сбор друзей с order: 'hints' ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -649,7 +648,7 @@
 
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
-            // order: 'hints' — сортировка по дате добавления (новые сверху)
+            // order: 'hints' — VK возвращает друзей в порядке от новых к старым
             const res = await vkCall('friends.get', {
                 fields: 'photo_50,first_name,last_name,deactivated',
                 count: count,
@@ -675,7 +674,12 @@
         }
 
         const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length} (порядок: новые → старые)`, 'info');
+        log(`Собрано друзей: ${filtered.length} (порядок от VK: новые → старые)`, 'info');
+        // Логируем первые 5 ID для проверки
+        if (filtered.length > 0) {
+            const sample = filtered.slice(0, 5).map(f => f.id).join(', ');
+            log(`Пример ID первых 5 друзей (сортировка VK): ${sample}`, 'info');
+        }
         return filtered;
     }
 
@@ -777,7 +781,7 @@
         return activeSet;
     }
 
-    // ============ ШАГ 4: Сравнение ============
+    // ============ ШАГ 4: Сравнение (сохраняем порядок) ============
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -808,9 +812,10 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.6`, 'info');
+        log(`🚀 Запуск анализа v4.7`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
+        log(`⚠️ Сортировка по ID ОТСУТСТВУЕТ — только порядок от VK + инвертирование`, 'warn');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
@@ -884,6 +889,7 @@
             log(`   Всего друзей: ${allFriends.length}`, 'info');
             log(`   Активных: ${activeUsers.size}`, 'success');
             log(`   Неактивных: ${inactive.length}`, 'warn');
+            log(`   Порядок: ${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'}`, 'info');
 
             setStatus('Готово');
 
@@ -901,11 +907,12 @@
         isRunning = false;
     }
 
-    // ============ ОТРИСОВКА ============
+    // ============ ОТРИСОВКА (без сортировки) ============
     function renderPage() {
         const searchInput = document.getElementById('searchInput');
         const search = searchInput ? searchInput.value.toLowerCase() : '';
 
+        // Фильтруем, сохраняя порядок
         filteredUsers = inactiveUsers.filter(user => {
             if (search) {
                 const name = (user.first_name + ' ' + user.last_name).toLowerCase();
@@ -913,6 +920,8 @@
             }
             return true;
         });
+
+        // НЕТ СОРТИРОВКИ — сохраняем порядок
 
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
         if (currentPage > totalPages) currentPage = totalPages || 1;
