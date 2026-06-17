@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v5.3 (friends.getRecent)</title>
+    <title>VK Activity Checker v5.4 (friends.getRecent)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -94,7 +94,9 @@
         .stat-row { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; color: #34495e; }
         .stat-val { font-weight: bold; color: #4a76a8; }
         .stat-val.time { color: #e67e22; font-family: monospace; }
-        .progress-container { margin-top: 10px; }
+        .progress-container {
+            margin-top: 10px;
+        }
         .progress-bar {
             width: 100%;
             height: 8px;
@@ -117,8 +119,14 @@
             font-size: 12px;
             color: #7f8c8d;
         }
-        .progress-info .percent { font-weight: bold; color: #2c3e50; font-size: 14px; }
-        .progress-info .eta { color: #e67e22; }
+        .progress-info .percent {
+            font-weight: bold;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+        .progress-info .eta {
+            color: #e67e22;
+        }
 
         .user-card {
             display: flex;
@@ -140,7 +148,10 @@
             overflow: hidden;
         }
         .user-card .avatar img { width: 100%; height: 100%; object-fit: cover; }
-        .user-card .info { flex: 1; min-width: 0; }
+        .user-card .info {
+            flex: 1;
+            min-width: 0;
+        }
         .user-card .info .name {
             font-weight: 600;
             font-size: 14px;
@@ -149,10 +160,21 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        .user-card .info .details { font-size: 12px; color: #95a5a6; }
+        .user-card .info .details {
+            font-size: 12px;
+            color: #95a5a6;
+        }
         .user-card .info .details span { margin-right: 12px; }
-        .user-card .actions { display: flex; gap: 6px; flex-shrink: 0; }
-        .user-card .actions button { padding: 6px 12px; font-size: 11px; border-radius: 8px; }
+        .user-card .actions {
+            display: flex;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+        .user-card .actions button {
+            padding: 6px 12px;
+            font-size: 11px;
+            border-radius: 8px;
+        }
         .btn-sm-danger { background: #e74c3c; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
         .btn-sm-success { background: #27ae60; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
         .btn-sm-secondary { background: #95a5a6; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
@@ -168,7 +190,10 @@
             border-radius: 10px;
             margin-left: 8px;
         }
-        .friend-badge.recent { background: #3498db; color: white; }
+        .friend-badge.recent {
+            background: #3498db;
+            color: white;
+        }
 
         #user-list {
             max-height: 500px;
@@ -176,7 +201,12 @@
             border: 1px solid #edf0f2;
             border-radius: 12px;
         }
-        #user-list .empty { padding: 40px; text-align: center; color: #95a5a6; font-size: 14px; }
+        #user-list .empty {
+            padding: 40px;
+            text-align: center;
+            color: #95a5a6;
+            font-size: 14px;
+        }
 
         .pagination {
             display: flex;
@@ -186,8 +216,15 @@
             padding: 15px 0;
             flex-wrap: wrap;
         }
-        .pagination button { padding: 8px 16px; font-size: 12px; border-radius: 8px; }
-        .pagination .page-info { font-size: 13px; color: #2c3e50; }
+        .pagination button {
+            padding: 8px 16px;
+            font-size: 12px;
+            border-radius: 8px;
+        }
+        .pagination .page-info {
+            font-size: 13px;
+            color: #2c3e50;
+        }
 
         #log {
             margin-top: 10px;
@@ -234,20 +271,65 @@
             flex: 1;
             min-width: 150px;
         }
-        .filter-bar .result-count { font-size: 13px; color: #7f8c8d; margin-left: auto; }
+        .filter-bar .result-count {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-left: auto;
+        }
 
-        .mode-selector { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
-        .mode-selector button { flex: 1; padding: 10px; font-size: 13px; border-radius: 10px; min-width: 100px; }
-        .mode-selector .active-mode { border: 3px solid #2c3e50; transform: scale(1.02); }
-        
-        .order-selector { display: flex; gap: 10px; margin-bottom: 15px; }
-        .order-selector button { flex: 1; padding: 10px; font-size: 13px; border-radius: 10px; }
-        .order-selector .active-order { border: 3px solid #2c3e50; transform: scale(1.02); }
-        
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
-        .stats-grid .stat-item { text-align: center; padding: 10px; border-radius: 10px; background: #f8f9fa; }
-        .stats-grid .stat-item .num { font-size: 22px; font-weight: bold; color: #2c3e50; }
-        .stats-grid .stat-item .label { font-size: 11px; color: #95a5a6; }
+        .mode-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .mode-selector button {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 10px;
+            min-width: 100px;
+        }
+        .mode-selector .active-mode {
+            border: 3px solid #2c3e50;
+            transform: scale(1.02);
+        }
+        .order-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .order-selector button {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 10px;
+        }
+        .order-selector .active-order {
+            border: 3px solid #2c3e50;
+            transform: scale(1.02);
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .stats-grid .stat-item {
+            text-align: center;
+            padding: 10px;
+            border-radius: 10px;
+            background: #f8f9fa;
+        }
+        .stats-grid .stat-item .num {
+            font-size: 22px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        .stats-grid .stat-item .label {
+            font-size: 11px;
+            color: #95a5a6;
+        }
         .stats-grid .stat-item.active-stat .num { color: #27ae60; }
         .stats-grid .stat-item.inactive-stat .num { color: #e74c3c; }
 
@@ -266,12 +348,16 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v5.3</h2>
+    <h2>VK Activity Checker v5.4</h2>
     <p class="desc">Сортировка по дате добавления через friends.getRecent</p>
 
     <div class="barkov-box">
-        <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">🔑 ЛОГИН НА BARKOV</button>
-        <button class="btn-login" onclick="window.open('https://vk.barkov.net/gettoken.aspx?a=get&m=f&s=friends', '_blank')">🔑 ПОЛУЧИТЬ ТОКЕН</button>
+        <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
+            🔑 ЛОГИН НА BARKOV
+        </button>
+        <button class="btn-login" onclick="window.open('https://vk.barkov.net/gettoken.aspx?a=get&m=f&s=friends', '_blank')">
+            🔑 ПОЛУЧИТЬ ТОКЕН
+        </button>
         <div class="instruction">
             <b>Инструкция:</b><br>
             1. Нажмите «Логин на Barkov» и авторизуйтесь.<br>
@@ -294,8 +380,8 @@
     </div>
 
     <div class="order-selector">
-        <button id="orderOld" class="btn-order-old" onclick="setOrder('old')">📅 Сначала старые</button>
-        <button id="orderNew" class="btn-order-new active-order" onclick="setOrder('new')">🆕 Сначала новые</button>
+        <button id="orderOld" class="btn-order-old active-order" onclick="setOrder('old')">📅 Сначала старые</button>
+        <button id="orderNew" class="btn-order-new" onclick="setOrder('new')">🆕 Сначала новые</button>
     </div>
 
     <div class="input-group">
@@ -311,7 +397,7 @@
     <div id="status-display">
         <div class="stat-row"><span>Статус:</span> <span id="status-text" class="stat-val">Ожидание</span></div>
         <div class="stat-row"><span>Режим:</span> <span id="mode-text" class="stat-val">Безопасный</span></div>
-        <div class="stat-row"><span>Порядок:</span> <span id="order-text" class="stat-val">Сначала новые</span></div>
+        <div class="stat-row"><span>Порядок:</span> <span id="order-text" class="stat-val">Сначала старые</span></div>
         <div class="stat-row"><span>Этап:</span> <span id="stage-text" class="stat-val">-</span></div>
         <div class="progress-container">
             <div class="progress-bar">
@@ -366,14 +452,14 @@
     let activeUsers = new Set();
     let inactiveUsers = [];
 
-    let recentSet = new Set();
-    let recentList = [];
+    let recentSet = new Set();      // ID недавно добавленных друзей
+    let recentList = [];            // упорядоченный список ID (новые в начале)
 
     let filteredUsers = [];
     let currentPage = 1;
     const PAGE_SIZE = 20;
     let currentMode = 'safe';
-    let currentOrder = 'new';
+    let currentOrder = 'old';
     let abortFlag = false;
 
     let startTime = null;
@@ -527,28 +613,35 @@
         if (startBtn) startBtn.disabled = false;
     }
 
+    // ============ СОРТИРОВКА ПО recent ============
     function applyOrderAndRender() {
         const sorted = [...inactiveUsers].sort((a, b) => {
             const aRecent = recentSet.has(a.id);
             const bRecent = recentSet.has(b.id);
 
+            // Если один в recent, другой нет
             if (aRecent && !bRecent) {
+                // Для "старые" — aRecent должен идти позже, для "новые" — раньше
                 return currentOrder === 'old' ? 1 : -1;
             }
             if (!aRecent && bRecent) {
                 return currentOrder === 'old' ? -1 : 1;
             }
 
+            // Оба в recent или оба не в recent
             if (aRecent && bRecent) {
+                // Сортируем по индексу в recentList (чем меньше индекс, тем новее)
                 const idxA = recentList.indexOf(a.id);
                 const idxB = recentList.indexOf(b.id);
                 if (currentOrder === 'old') {
-                    return idxB - idxA;
+                    // старые сверху — значит обратный порядок (новые в конце)
+                    return idxB - idxA; // чем больше idx, тем старше (т.к. новые имеют меньший индекс)
                 } else {
-                    return idxA - idxB;
+                    return idxA - idxB; // новые сверху
                 }
             }
 
+            // Оба не в recent — сортируем по ID (меньше ID = старее)
             return currentOrder === 'old' ? a.id - b.id : b.id - a.id;
         });
 
@@ -557,6 +650,7 @@
         renderPage();
     }
 
+    // ============ ШАГ 1: ID владельца ============
     async function getMyId(token) {
         if (myId) return myId;
         const res = await vkCall('users.get', {}, token);
@@ -569,6 +663,7 @@
         return myId;
     }
 
+    // ============ ШАГ 2: Сбор друзей и recent ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -604,17 +699,22 @@
         const filtered = all.filter(f => !f.deactivated);
         log(`Собрано друзей: ${filtered.length}`, 'info');
 
+        // ===== Получаем список недавно добавленных =====
         setStage('Получение recent');
         try {
-            const recentRes = await vkCall('friends.getRecent', { count: 1000 }, token);
+            const recentRes = await vkCall('friends.getRecent', {
+                count: 1000 // максимум
+            }, token);
             if (recentRes.error) {
                 log('Ошибка получения recent: ' + recentRes.error.error_msg, 'warn');
+                // Если ошибка, оставляем пустой список
                 recentSet = new Set();
                 recentList = [];
             } else {
-                const ids = recentRes.response.items || [];
+                // Исправление: метод friends.getRecent возвращает прямой плоский массив, а не объект с полем items
+                const ids = Array.isArray(recentRes.response) ? recentRes.response : (recentRes.response ? (recentRes.response.items || []) : []);
                 recentSet = new Set(ids);
-                recentList = ids;
+                recentList = ids; // порядок: сначала новые
                 log(`Получено недавно добавленных: ${ids.length}`, 'info');
                 if (ids.length > 0) {
                     log(`Пример recent ID: ${ids.slice(0, 5).join(', ')}`, 'info');
@@ -629,6 +729,7 @@
         return filtered;
     }
 
+    // ============ ШАГ 3: Сбор активных ============
     async function collectActiveUsers(token, postsLimit) {
         const activeSet = new Set();
         const delays = getDelays();
@@ -665,7 +766,8 @@
             processedCount = postIndex;
             const percent = (postIndex / posts.length) * 100;
             updateProgress(percent);
-            
+
+            // Лайки поста
             const likesRes = await vkCall('likes.getList', {
                 type: 'post',
                 owner_id: myId,
@@ -682,7 +784,8 @@
             }
 
             await sleep(delays.betweenPosts);
-            
+
+            // Комментарии
             const commentsRes = await vkCall('wall.getComments', {
                 owner_id: myId,
                 post_id: post.id,
@@ -720,6 +823,7 @@
         return activeSet;
     }
 
+    // ============ ШАГ 4: Сравнение ============
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -730,6 +834,7 @@
         return inactive;
     }
 
+    // ============ ГЛАВНЫЙ ПРОЦЕСС ============
     async function startAnalysis() {
         if (isRunning) return;
         const token = getTokenFromInput();
@@ -747,7 +852,7 @@
         if (startBtn) startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
-        log(`🚀 Запуск анализа v5.3 (friends.getRecent)`, 'info');
+        log(`🚀 Запуск анализа v5.4 (friends.getRecent)`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         setStatus('Запуск...');
@@ -762,6 +867,7 @@
         }
 
         try {
+            // ШАГ 1
             const ownerId = await getMyId(token);
             if (!ownerId) {
                 isRunning = false;
@@ -770,6 +876,7 @@
                 return;
             }
 
+            // ШАГ 2
             setStatus('Сбор базы друзей...');
             allFriends = await collectAllFriends(token);
             if (!allFriends) {
@@ -787,6 +894,7 @@
                 return;
             }
 
+            // ШАГ 3
             setStatus('Сбор базы активных...');
             activeUsers = await collectActiveUsers(token, postsLimit);
 
@@ -798,12 +906,14 @@
                 return;
             }
 
+            // ШАГ 4
             setStatus('Сравнение баз...');
             setStage('Сравнение');
 
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
+            // Применяем сортировку по recent
             applyOrderAndRender();
             const statsGrid = document.getElementById('statsGrid');
             if (statsGrid) statsGrid.style.display = 'grid';
@@ -833,6 +943,7 @@
         isRunning = false;
     }
 
+    // ============ ОТРИСОВКА ============
     function renderPage() {
         const searchInput = document.getElementById('searchInput');
         const search = searchInput ? searchInput.value.toLowerCase() : '';
@@ -940,7 +1051,7 @@
     }
 
     setMode('safe');
-    setOrder('new');
+    setOrder('old');
 </script>
 
 </body>
