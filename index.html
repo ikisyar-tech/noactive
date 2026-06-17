@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.5</title>
+    <title>VK Activity Checker v4.6</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -344,8 +344,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.5</h2>
-    <p class="desc">Сортировка: старые друзья первыми (инвертированный порядок)</p>
+    <h2>VK Activity Checker v4.6</h2>
+    <p class="desc">Сортировка по дате добавления (hints) + инвертирование</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -589,7 +589,7 @@
         if (oldBtn) oldBtn.className = 'btn-order-old' + (order === 'old' ? ' active-order' : '');
         if (newBtn) newBtn.className = 'btn-order-new' + (order === 'new' ? ' active-order' : '');
         log(`Порядок: ${order === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        // Пересортировка без перезапуска
+        // Пересортировка без перезапуска (просто инвертируем)
         if (allFriends.length > 0) {
             applyOrderAndRender();
         }
@@ -609,21 +609,16 @@
         if (startBtn) startBtn.disabled = false;
     }
 
-    // ============ Применение порядка к списку ============
+    // ============ Применение порядка (только инвертирование) ============
     function applyOrderAndRender() {
-        // Берём текущий список неактивных
+        // Копируем текущий список
         let ordered = [...inactiveUsers];
-        
-        // Сортируем по ID для инвертирования (потому что VK не даёт дату)
-        // Но оставляем возможность переключения
+        // Если нужны старые друзья сверху — инвертируем массив
+        // Изначально VK возвращает друзей в порядке hints (сначала новые)
         if (currentOrder === 'old') {
-            // Старые сверху — сортируем по возрастанию ID (чем меньше ID, тем старше аккаунт)
-            ordered.sort((a, b) => a.id - b.id);
-        } else {
-            // Новые сверху — сортируем по убыванию ID
-            ordered.sort((a, b) => b.id - a.id);
+            ordered.reverse();
         }
-        
+        // Если новые — оставляем как есть
         inactiveUsers = ordered;
         currentPage = 1;
         renderPage();
@@ -642,7 +637,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей ============
+    // ============ ШАГ 2: Сбор друзей с hints ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -654,6 +649,7 @@
 
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
+            // order: 'hints' — сортировка по дате добавления (новые сверху)
             const res = await vkCall('friends.get', {
                 fields: 'photo_50,first_name,last_name,deactivated',
                 count: count,
@@ -679,7 +675,7 @@
         }
 
         const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length}`, 'info');
+        log(`Собрано друзей: ${filtered.length} (порядок: новые → старые)`, 'info');
         return filtered;
     }
 
@@ -812,7 +808,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.5`, 'info');
+        log(`🚀 Запуск анализа v4.6`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         setStatus('Запуск...');
@@ -873,7 +869,7 @@
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
-            // Применяем порядок
+            // Применяем порядок (инвертируем если нужно)
             applyOrderAndRender();
 
             const statsGrid = document.getElementById('statsGrid');
