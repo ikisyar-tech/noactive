@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.2</title>
+    <title>VK Activity Checker v4.4</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -81,6 +81,8 @@
         .btn-secondary { background: #95a5a6; color: white; }
         .btn-mode-safe { background: #27ae60; color: white; }
         .btn-mode-normal { background: #e67e22; color: white; }
+        .btn-order-old { background: #2980b9; color: white; }
+        .btn-order-new { background: #8e44ad; color: white; }
 
         #status-display {
             background: #f8f9fa;
@@ -180,7 +182,7 @@
         .btn-sm-success:hover { background: #219a52; }
         .btn-sm-secondary:hover { background: #7f8c8d; }
 
-        .friend-date {
+        .friend-order {
             font-size: 10px;
             color: #7f8c8d;
             background: #ecf0f1;
@@ -275,14 +277,31 @@
             display: flex;
             gap: 10px;
             margin-bottom: 15px;
+            flex-wrap: wrap;
         }
         .mode-selector button {
             flex: 1;
             padding: 10px;
             font-size: 13px;
             border-radius: 10px;
+            min-width: 100px;
         }
         .mode-selector .active-mode {
+            border: 3px solid #2c3e50;
+            transform: scale(1.02);
+        }
+        .order-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        .order-selector button {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 10px;
+        }
+        .order-selector .active-order {
             border: 3px solid #2c3e50;
             transform: scale(1.02);
         }
@@ -317,6 +336,7 @@
             .filter-bar { flex-direction: column; align-items: stretch; }
             .filter-bar .result-count { margin-left: 0; text-align: center; }
             .mode-selector { flex-direction: column; }
+            .order-selector { flex-direction: column; }
             .stats-grid { grid-template-columns: 1fr; }
         }
     </style>
@@ -324,8 +344,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.2</h2>
-    <p class="desc">Сортировка по дате добавления в друзья (старые друзья — первые)</p>
+    <h2>VK Activity Checker v4.4</h2>
+    <p class="desc">Сортировка: старые друзья первыми (инвертированный порядок)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -355,6 +375,11 @@
         <button id="modeNormal" class="btn-mode-normal" onclick="setMode('normal')">⚡ Обычный</button>
     </div>
 
+    <div class="order-selector">
+        <button id="orderOld" class="btn-order-old active-order" onclick="setOrder('old')">📅 Сначала старые</button>
+        <button id="orderNew" class="btn-order-new" onclick="setOrder('new')">🆕 Сначала новые</button>
+    </div>
+
     <div class="input-group">
         <label>Количество постов на вашей стене для проверки (0 = все)</label>
         <input type="number" id="postsLimit" value="50" min="0" step="1">
@@ -368,6 +393,7 @@
     <div id="status-display">
         <div class="stat-row"><span>Статус:</span> <span id="status-text" class="stat-val">Ожидание</span></div>
         <div class="stat-row"><span>Режим:</span> <span id="mode-text" class="stat-val">Безопасный</span></div>
+        <div class="stat-row"><span>Порядок:</span> <span id="order-text" class="stat-val">Сначала старые</span></div>
         <div class="stat-row"><span>Этап:</span> <span id="stage-text" class="stat-val">-</span></div>
         <div class="progress-container">
             <div class="progress-bar">
@@ -426,6 +452,7 @@
     let currentPage = 1;
     const PAGE_SIZE = 20;
     let currentMode = 'safe';
+    let currentOrder = 'old'; // 'old' или 'new'
     let abortFlag = false;
 
     let startTime = null;
@@ -554,6 +581,17 @@
         log(`Режим: ${mode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
     }
 
+    function setOrder(order) {
+        currentOrder = order;
+        safeUpdate('order-text', order === 'old' ? 'Сначала старые' : 'Сначала новые');
+        const oldBtn = document.getElementById('orderOld');
+        const newBtn = document.getElementById('orderNew');
+        if (oldBtn) oldBtn.className = 'btn-order-old' + (order === 'old' ? ' active-order' : '');
+        if (newBtn) newBtn.className = 'btn-order-new' + (order === 'new' ? ' active-order' : '');
+        log(`Порядок: ${order === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
+        renderPage(); // Перерисовываем с новым порядком
+    }
+
     function stopAnalysis() {
         isRunning = false;
         abortFlag = true;
@@ -581,7 +619,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей с сортировкой по дате добавления ============
+    // ============ ШАГ 2: Сбор друзей с инвертированием ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -591,37 +629,83 @@
 
         setStage('Сбор базы друзей');
 
-        while (hasMore && isRunning) {
-            log(`Загрузка друзей: смещение ${offset}...`, 'info');
-            // Используем order: 'date' для сортировки по дате добавления
-            const res = await vkCall('friends.get', {
-                fields: 'photo_50,first_name,last_name,deactivated',
-                count: count,
-                offset: offset,
-                order: 'date'  // ← сортировка по дате добавления
+        // Получаем ID друзей с сортировкой от новых к старым (через order)
+        let orderedIds = [];
+        let offsetIds = 0;
+        const countIds = 1000;
+        let hasMoreIds = true;
+
+        while (hasMoreIds && isRunning) {
+            log(`Загрузка ID друзей: смещение ${offsetIds}...`, 'info');
+            // Используем order: 'hints' — VK возвращает сначала недавно добавленных
+            const idRes = await vkCall('friends.get', {
+                count: countIds,
+                offset: offsetIds,
+                order: 'hints'
             }, token);
 
-            if (res.error) {
-                log('Ошибка: ' + res.error.error_msg, 'err');
+            if (idRes.error) {
+                log('Ошибка получения ID: ' + idRes.error.error_msg, 'err');
                 return null;
             }
 
-            const items = res.response.items || [];
-            all = all.concat(items);
-            safeUpdate('total-friends', all.length);
+            const ids = idRes.response.items || [];
+            orderedIds = orderedIds.concat(ids);
 
-            if (items.length < count) {
-                hasMore = false;
+            if (ids.length < countIds) {
+                hasMoreIds = false;
             } else {
-                offset += count;
+                offsetIds += countIds;
                 await sleep(delays.betweenFriendBatches);
             }
         }
 
-        // Убираем удалённые/заблокированные, но сохраняем порядок
-        const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length} (сортировка по дате добавления)`, 'info');
-        return filtered;
+        log(`Получено ID друзей: ${orderedIds.length}`, 'info');
+
+        // Если нужно сначала старые — инвертируем массив
+        if (currentOrder === 'old') {
+            orderedIds.reverse();
+            log('Порядок инвертирован: старые друзья сверху', 'info');
+        } else {
+            log('Порядок: новые друзья сверху', 'info');
+        }
+
+        // Получаем данные для всех друзей
+        const allData = [];
+        for (let i = 0; i < orderedIds.length; i += 100) {
+            const batch = orderedIds.slice(i, i + 100);
+            const res = await vkCall('users.get', {
+                user_ids: batch.join(','),
+                fields: 'photo_50,first_name,last_name,deactivated'
+            }, token);
+
+            if (res.error) {
+                log('Ошибка получения данных: ' + res.error.error_msg, 'err');
+                continue;
+            }
+
+            const items = res.response || [];
+            allData.push(...items);
+            safeUpdate('total-friends', allData.length);
+            await sleep(delays.betweenFriendBatches);
+        }
+
+        // Создаём мапу
+        const dataMap = {};
+        for (const user of allData) {
+            dataMap[user.id] = user;
+        }
+
+        // Собираем в нужном порядке
+        const sorted = [];
+        for (const id of orderedIds) {
+            if (dataMap[id] && !dataMap[id].deactivated) {
+                sorted.push(dataMap[id]);
+            }
+        }
+
+        log(`Собрано друзей: ${sorted.length}`, 'info');
+        return sorted;
     }
 
     // ============ ШАГ 3: Сбор активных ============
@@ -722,7 +806,7 @@
         return activeSet;
     }
 
-    // ============ ШАГ 4: Сравнение (сохраняем порядок) ============
+    // ============ ШАГ 4: Сравнение ============
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -753,9 +837,9 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.2`, 'info');
+        log(`🚀 Запуск анализа v4.4`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
-        log(`Сортировка: по дате добавления (старые друзья — первые)`, 'info');
+        log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
@@ -811,11 +895,9 @@
             setStatus('Сравнение баз...');
             setStage('Сравнение');
 
-            // Сохраняем порядок сортировки (уже отсортировано по дате)
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
-            // Вывод статистики
             const statsGrid = document.getElementById('statsGrid');
             if (statsGrid) statsGrid.style.display = 'grid';
             safeUpdate('statTotal', allFriends.length);
@@ -828,7 +910,6 @@
             log(`   Всего друзей: ${allFriends.length}`, 'info');
             log(`   Активных: ${activeUsers.size}`, 'success');
             log(`   Неактивных: ${inactive.length}`, 'warn');
-            log(`   ⚠️ Список отсортирован по дате добавления (старые друзья сверху)`, 'info');
 
             setStatus('Готово');
             currentPage = 1;
@@ -853,16 +934,16 @@
         const searchInput = document.getElementById('searchInput');
         const search = searchInput ? searchInput.value.toLowerCase() : '';
 
-        filteredUsers = inactiveUsers.filter(user => {
+        // Берём исходный список (уже отсортирован по выбранному порядку)
+        let sourceList = inactiveUsers;
+
+        filteredUsers = sourceList.filter(user => {
             if (search) {
                 const name = (user.first_name + ' ' + user.last_name).toLowerCase();
                 if (!name.includes(search)) return false;
             }
             return true;
         });
-
-        // Уже отсортированы по дате добавления, сохраняем порядок
-        // filteredUsers.sort((a, b) => a.id - b.id); // ← УБРАЛИ сортировку по ID
 
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
         if (currentPage > totalPages) currentPage = totalPages || 1;
@@ -889,21 +970,13 @@
             const avatar = user.photo_50 || '';
             const name = (user.first_name || '') + ' ' + (user.last_name || '');
 
-            // Попытка получить дату добавления (если есть в данных)
-            let dateStr = '';
-            if (user.friend_date) {
-                const d = new Date(user.friend_date * 1000);
-                dateStr = d.toLocaleDateString();
-            }
-
             html += `
                 <div class="user-card">
                     <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : ''}</div>
                     <div class="info">
                         <div class="name">
                             ${name} <span class="badge">неактивен</span>
-                            ${dateStr ? `<span class="friend-date">📅 ${dateStr}</span>` : ''}
-                            <span style="font-size:10px;color:#95a5a6;margin-left:8px;">#${position}</span>
+                            <span class="friend-order">#${position}</span>
                         </div>
                         <div class="details">
                             <span>ID: ${user.id}</span>
@@ -965,8 +1038,8 @@
         }
     }
 
-    // Инициализация
     setMode('safe');
+    setOrder('old');
 </script>
 
 </body>
