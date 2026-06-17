@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.1</title>
+    <title>VK Activity Checker v4.2</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -180,6 +180,15 @@
         .btn-sm-success:hover { background: #219a52; }
         .btn-sm-secondary:hover { background: #7f8c8d; }
 
+        .friend-date {
+            font-size: 10px;
+            color: #7f8c8d;
+            background: #ecf0f1;
+            padding: 1px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+        }
+
         #user-list {
             max-height: 500px;
             overflow-y: auto;
@@ -315,8 +324,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.1</h2>
-    <p class="desc">Сравнивает базу друзей с базой активных пользователей</p>
+    <h2>VK Activity Checker v4.2</h2>
+    <p class="desc">Сортировка по дате добавления в друзья (старые друзья — первые)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -426,7 +435,6 @@
 
     const logDiv = document.getElementById('log');
 
-    // ============ БЕЗОПАСНОЕ ОБНОВЛЕНИЕ DOM ============
     function safeUpdate(id, value) {
         const el = document.getElementById(id);
         if (el) el.innerText = value;
@@ -573,7 +581,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей ============
+    // ============ ШАГ 2: Сбор друзей с сортировкой по дате добавления ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -585,10 +593,12 @@
 
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
+            // Используем order: 'date' для сортировки по дате добавления
             const res = await vkCall('friends.get', {
                 fields: 'photo_50,first_name,last_name,deactivated',
                 count: count,
-                offset: offset
+                offset: offset,
+                order: 'date'  // ← сортировка по дате добавления
             }, token);
 
             if (res.error) {
@@ -608,8 +618,9 @@
             }
         }
 
+        // Убираем удалённые/заблокированные, но сохраняем порядок
         const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length}`, 'info');
+        log(`Собрано друзей: ${filtered.length} (сортировка по дате добавления)`, 'info');
         return filtered;
     }
 
@@ -711,7 +722,7 @@
         return activeSet;
     }
 
-    // ============ ШАГ 4: Сравнение ============
+    // ============ ШАГ 4: Сравнение (сохраняем порядок) ============
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -742,8 +753,9 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.1`, 'info');
+        log(`🚀 Запуск анализа v4.2`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
+        log(`Сортировка: по дате добавления (старые друзья — первые)`, 'info');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
@@ -799,6 +811,7 @@
             setStatus('Сравнение баз...');
             setStage('Сравнение');
 
+            // Сохраняем порядок сортировки (уже отсортировано по дате)
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
@@ -815,6 +828,7 @@
             log(`   Всего друзей: ${allFriends.length}`, 'info');
             log(`   Активных: ${activeUsers.size}`, 'success');
             log(`   Неактивных: ${inactive.length}`, 'warn');
+            log(`   ⚠️ Список отсортирован по дате добавления (старые друзья сверху)`, 'info');
 
             setStatus('Готово');
             currentPage = 1;
@@ -847,7 +861,8 @@
             return true;
         });
 
-        filteredUsers.sort((a, b) => a.id - b.id);
+        // Уже отсортированы по дате добавления, сохраняем порядок
+        // filteredUsers.sort((a, b) => a.id - b.id); // ← УБРАЛИ сортировку по ID
 
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
         if (currentPage > totalPages) currentPage = totalPages || 1;
@@ -869,15 +884,27 @@
         }
 
         let html = '';
+        let position = start + 1;
         for (const user of pageUsers) {
             const avatar = user.photo_50 || '';
             const name = (user.first_name || '') + ' ' + (user.last_name || '');
+
+            // Попытка получить дату добавления (если есть в данных)
+            let dateStr = '';
+            if (user.friend_date) {
+                const d = new Date(user.friend_date * 1000);
+                dateStr = d.toLocaleDateString();
+            }
 
             html += `
                 <div class="user-card">
                     <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : ''}</div>
                     <div class="info">
-                        <div class="name">${name} <span class="badge">неактивен</span></div>
+                        <div class="name">
+                            ${name} <span class="badge">неактивен</span>
+                            ${dateStr ? `<span class="friend-date">📅 ${dateStr}</span>` : ''}
+                            <span style="font-size:10px;color:#95a5a6;margin-left:8px;">#${position}</span>
+                        </div>
                         <div class="details">
                             <span>ID: ${user.id}</span>
                         </div>
@@ -888,6 +915,7 @@
                     </div>
                 </div>
             `;
+            position++;
         }
 
         container.innerHTML = html;
