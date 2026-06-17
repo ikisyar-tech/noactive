@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v4.4</title>
+    <title>VK Activity Checker v4.5</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -344,7 +344,7 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v4.4</h2>
+    <h2>VK Activity Checker v4.5</h2>
     <p class="desc">Сортировка: старые друзья первыми (инвертированный порядок)</p>
 
     <div class="barkov-box">
@@ -452,7 +452,7 @@
     let currentPage = 1;
     const PAGE_SIZE = 20;
     let currentMode = 'safe';
-    let currentOrder = 'old'; // 'old' или 'new'
+    let currentOrder = 'old';
     let abortFlag = false;
 
     let startTime = null;
@@ -589,7 +589,10 @@
         if (oldBtn) oldBtn.className = 'btn-order-old' + (order === 'old' ? ' active-order' : '');
         if (newBtn) newBtn.className = 'btn-order-new' + (order === 'new' ? ' active-order' : '');
         log(`Порядок: ${order === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        renderPage(); // Перерисовываем с новым порядком
+        // Пересортировка без перезапуска
+        if (allFriends.length > 0) {
+            applyOrderAndRender();
+        }
     }
 
     function stopAnalysis() {
@@ -606,6 +609,26 @@
         if (startBtn) startBtn.disabled = false;
     }
 
+    // ============ Применение порядка к списку ============
+    function applyOrderAndRender() {
+        // Берём текущий список неактивных
+        let ordered = [...inactiveUsers];
+        
+        // Сортируем по ID для инвертирования (потому что VK не даёт дату)
+        // Но оставляем возможность переключения
+        if (currentOrder === 'old') {
+            // Старые сверху — сортируем по возрастанию ID (чем меньше ID, тем старше аккаунт)
+            ordered.sort((a, b) => a.id - b.id);
+        } else {
+            // Новые сверху — сортируем по убыванию ID
+            ordered.sort((a, b) => b.id - a.id);
+        }
+        
+        inactiveUsers = ordered;
+        currentPage = 1;
+        renderPage();
+    }
+
     // ============ ШАГ 1: ID владельца ============
     async function getMyId(token) {
         if (myId) return myId;
@@ -619,7 +642,7 @@
         return myId;
     }
 
-    // ============ ШАГ 2: Сбор друзей с инвертированием ============
+    // ============ ШАГ 2: Сбор друзей ============
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -629,83 +652,35 @@
 
         setStage('Сбор базы друзей');
 
-        // Получаем ID друзей с сортировкой от новых к старым (через order)
-        let orderedIds = [];
-        let offsetIds = 0;
-        const countIds = 1000;
-        let hasMoreIds = true;
-
-        while (hasMoreIds && isRunning) {
-            log(`Загрузка ID друзей: смещение ${offsetIds}...`, 'info');
-            // Используем order: 'hints' — VK возвращает сначала недавно добавленных
-            const idRes = await vkCall('friends.get', {
-                count: countIds,
-                offset: offsetIds,
+        while (hasMore && isRunning) {
+            log(`Загрузка друзей: смещение ${offset}...`, 'info');
+            const res = await vkCall('friends.get', {
+                fields: 'photo_50,first_name,last_name,deactivated',
+                count: count,
+                offset: offset,
                 order: 'hints'
             }, token);
 
-            if (idRes.error) {
-                log('Ошибка получения ID: ' + idRes.error.error_msg, 'err');
+            if (res.error) {
+                log('Ошибка: ' + res.error.error_msg, 'err');
                 return null;
             }
 
-            const ids = idRes.response.items || [];
-            orderedIds = orderedIds.concat(ids);
+            const items = res.response.items || [];
+            all = all.concat(items);
+            safeUpdate('total-friends', all.length);
 
-            if (ids.length < countIds) {
-                hasMoreIds = false;
+            if (items.length < count) {
+                hasMore = false;
             } else {
-                offsetIds += countIds;
+                offset += count;
                 await sleep(delays.betweenFriendBatches);
             }
         }
 
-        log(`Получено ID друзей: ${orderedIds.length}`, 'info');
-
-        // Если нужно сначала старые — инвертируем массив
-        if (currentOrder === 'old') {
-            orderedIds.reverse();
-            log('Порядок инвертирован: старые друзья сверху', 'info');
-        } else {
-            log('Порядок: новые друзья сверху', 'info');
-        }
-
-        // Получаем данные для всех друзей
-        const allData = [];
-        for (let i = 0; i < orderedIds.length; i += 100) {
-            const batch = orderedIds.slice(i, i + 100);
-            const res = await vkCall('users.get', {
-                user_ids: batch.join(','),
-                fields: 'photo_50,first_name,last_name,deactivated'
-            }, token);
-
-            if (res.error) {
-                log('Ошибка получения данных: ' + res.error.error_msg, 'err');
-                continue;
-            }
-
-            const items = res.response || [];
-            allData.push(...items);
-            safeUpdate('total-friends', allData.length);
-            await sleep(delays.betweenFriendBatches);
-        }
-
-        // Создаём мапу
-        const dataMap = {};
-        for (const user of allData) {
-            dataMap[user.id] = user;
-        }
-
-        // Собираем в нужном порядке
-        const sorted = [];
-        for (const id of orderedIds) {
-            if (dataMap[id] && !dataMap[id].deactivated) {
-                sorted.push(dataMap[id]);
-            }
-        }
-
-        log(`Собрано друзей: ${sorted.length}`, 'info');
-        return sorted;
+        const filtered = all.filter(f => !f.deactivated);
+        log(`Собрано друзей: ${filtered.length}`, 'info');
+        return filtered;
     }
 
     // ============ ШАГ 3: Сбор активных ============
@@ -837,7 +812,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
 
-        log(`🚀 Запуск анализа v4.4`, 'info');
+        log(`🚀 Запуск анализа v4.5`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         setStatus('Запуск...');
@@ -898,6 +873,9 @@
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
+            // Применяем порядок
+            applyOrderAndRender();
+
             const statsGrid = document.getElementById('statsGrid');
             if (statsGrid) statsGrid.style.display = 'grid';
             safeUpdate('statTotal', allFriends.length);
@@ -912,8 +890,6 @@
             log(`   Неактивных: ${inactive.length}`, 'warn');
 
             setStatus('Готово');
-            currentPage = 1;
-            renderPage();
 
         } catch (e) {
             log('Ошибка: ' + e.message, 'err');
@@ -934,10 +910,7 @@
         const searchInput = document.getElementById('searchInput');
         const search = searchInput ? searchInput.value.toLowerCase() : '';
 
-        // Берём исходный список (уже отсортирован по выбранному порядку)
-        let sourceList = inactiveUsers;
-
-        filteredUsers = sourceList.filter(user => {
+        filteredUsers = inactiveUsers.filter(user => {
             if (search) {
                 const name = (user.first_name + ' ' + user.last_name).toLowerCase();
                 if (!name.includes(search)) return false;
@@ -1007,7 +980,7 @@
         if (confirm('Оставить пользователя в друзьях?')) {
             inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
             allFriends = allFriends.filter(u => u.id !== userId);
-            renderPage();
+            applyOrderAndRender();
             safeUpdate('statInactive', inactiveUsers.length);
             safeUpdate('statTotal', allFriends.length);
             log(`Пользователь ${userId} оставлен`, 'success');
@@ -1023,7 +996,7 @@
                         log(`✅ Пользователь ${userId} удалён`, 'success');
                         inactiveUsers = inactiveUsers.filter(u => u.id !== userId);
                         allFriends = allFriends.filter(u => u.id !== userId);
-                        renderPage();
+                        applyOrderAndRender();
                         safeUpdate('statInactive', inactiveUsers.length);
                         safeUpdate('statTotal', allFriends.length);
                     } else {
