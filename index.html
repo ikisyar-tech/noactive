@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.0 (финальная)</title>
+    <title>VK Activity Checker v6.1 (финальная)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -129,10 +129,11 @@
         }
 
         .group-actions {
-            display: none; /* скрыта по умолчанию, показывается только при наличии неактивных */
+            display: none;
             gap: 10px;
             margin-bottom: 15px;
             flex-wrap: wrap;
+            align-items: center;
         }
         .group-actions.visible {
             display: flex;
@@ -141,6 +142,13 @@
             padding: 10px 20px;
             font-size: 13px;
             border-radius: 10px;
+        }
+        .group-actions input[type="number"] {
+            width: 80px;
+            padding: 8px;
+            border-radius: 8px;
+            border: 1px solid #dcdfe6;
+            font-size: 14px;
         }
 
         #status-display {
@@ -366,15 +374,16 @@
             .filter-bar .result-count { margin-left: 0; text-align: center; }
             .mode-selector, .order-selector, .filter-selector { flex-direction: column; }
             .stats-grid { grid-template-columns: 1fr; }
-            .group-actions { flex-direction: column; }
+            .group-actions { flex-direction: column; align-items: stretch; }
             .content-checkboxes { flex-direction: column; gap: 8px; }
+            .group-actions input[type="number"] { width: 100%; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.0 (финальная)</h2>
+    <h2>VK Activity Checker v6.1 (финальная)</h2>
     <p class="desc">Сортировка по дате добавления (friends.getRecent) + клипы и разделение</p>
 
     <div class="barkov-box">
@@ -416,9 +425,12 @@
         <button id="filterOld" class="btn-filter btn-filter-old" onclick="setFilter('old')">📅 Старые</button>
     </div>
 
-    <!-- Блок групповых действий – изначально скрыт, показывается только при наличии неактивных -->
+    <!-- Блок групповых действий – появляется после анализа -->
     <div class="group-actions" id="groupActions">
         <button id="deleteAllBtn" class="btn-danger" onclick="deleteAllFiltered()">🗑 Удалить всех (0)</button>
+        <span style="font-size:13px; color:#2c3e50;">или</span>
+        <input type="number" id="deleteCount" value="10" min="1" max="1000" style="width:80px; padding:8px; border-radius:8px; border:1px solid #dcdfe6; font-size:14px;">
+        <button class="btn-danger" onclick="deleteFirstN()">🗑 Удалить первых N</button>
     </div>
 
     <div class="input-group">
@@ -506,15 +518,15 @@
     let activeUsers = new Set();
     let inactiveUsers = [];
 
-    let recentSet = new Set();      // ID недавно добавленных друзей
-    let recentList = [];            // упорядоченный список ID (новые в начале)
+    let recentSet = new Set();
+    let recentList = [];
 
     let filteredUsers = [];
     let currentPage = 1;
     const PAGE_SIZE = 20;
     let currentMode = 'safe';
     let currentOrder = 'old';
-    let currentFilter = 'all';      // 'all', 'recent', 'old'
+    let currentFilter = 'all';
     let abortFlag = false;
 
     let startTime = null;
@@ -576,10 +588,8 @@
         const fill = document.getElementById('progressFill');
         const percentText = document.getElementById('percentText');
         const etaText = document.getElementById('etaText');
-
         if (fill) fill.style.width = Math.min(100, percent) + '%';
         if (percentText) percentText.textContent = percent.toFixed(1) + '%';
-
         if (etaText && eta !== null) {
             if (eta === 'завершено') {
                 etaText.textContent = '✅ Завершено!';
@@ -604,9 +614,7 @@
     }
 
     function updateETA() {
-        if (!startTime || processedCount === 0 || processedCount >= totalToProcess) {
-            return;
-        }
+        if (!startTime || processedCount === 0 || processedCount >= totalToProcess) return;
         const elapsed = (Date.now() - startTime) / 1000;
         const rate = processedCount / elapsed;
         const remaining = totalToProcess - processedCount;
@@ -691,15 +699,13 @@
         if (startBtn) startBtn.disabled = false;
     }
 
-    // ========== Управление видимостью групповой кнопки ==========
+    // ========== Управление видимостью групповой панели ==========
     function updateGroupActionsVisibility() {
         const container = document.getElementById('groupActions');
         const btn = document.getElementById('deleteAllBtn');
         if (!container || !btn) return;
-
         const count = getFilteredUsers().length;
         btn.textContent = `🗑 Удалить всех (${count})`;
-
         if (count > 0 && !isRunning) {
             container.classList.add('visible');
         } else {
@@ -738,11 +744,10 @@
     function getFilteredUsers() {
         if (currentFilter === 'all') return inactiveUsers;
         if (currentFilter === 'recent') return inactiveUsers.filter(u => recentSet.has(u.id));
-        // old
         return inactiveUsers.filter(u => !recentSet.has(u.id));
     }
 
-    // ========== Групповое удаление ==========
+    // ========== Групповое удаление всех ==========
     async function deleteAllFiltered() {
         const list = getFilteredUsers();
         if (list.length === 0) {
@@ -750,18 +755,41 @@
             return;
         }
         if (!confirm(`Удалить всех ${list.length} пользователей из текущего фильтра?`)) return;
+        await deleteUsersList(list);
+    }
+
+    // ========== Удаление первых N ==========
+    async function deleteFirstN() {
+        const list = getFilteredUsers();
+        if (list.length === 0) {
+            alert('Нет пользователей для удаления.');
+            return;
+        }
+        const countInput = document.getElementById('deleteCount');
+        let n = parseInt(countInput.value) || 10;
+        if (n < 1) n = 1;
+        if (n > list.length) n = list.length;
+        if (!confirm(`Удалить первых ${n} пользователей из текущего списка (всего ${list.length})?`)) return;
+        const toDelete = list.slice(0, n);
+        await deleteUsersList(toDelete);
+    }
+
+    // ========== Общая функция удаления списка пользователей ==========
+    async function deleteUsersList(users) {
+        if (users.length === 0) return;
         if (!currentToken) {
             alert('Токен отсутствует.');
             return;
         }
 
-        const btn = document.getElementById('deleteAllBtn');
-        btn.disabled = true;
-        btn.textContent = 'Удаление...';
+        const btnAll = document.getElementById('deleteAllBtn');
+        const btnN = document.querySelector('.group-actions .btn-danger:last-child');
+        btnAll.disabled = true;
+        if (btnN) btnN.disabled = true;
 
         let deleted = 0;
         const delays = getDelays();
-        for (const user of list) {
+        for (const user of users) {
             if (!isRunning && !abortFlag) break;
             try {
                 const res = await vkCall('friends.delete', { user_id: user.id }, currentToken);
@@ -771,7 +799,7 @@
                     inactiveUsers = inactiveUsers.filter(u => u.id !== user.id);
                     safeUpdate('statTotal', allFriends.length);
                     safeUpdate('statInactive', inactiveUsers.length);
-                    log(`✅ Удалён ${user.id} (${deleted}/${list.length})`, 'success');
+                    log(`✅ Удалён ${user.id} (${deleted}/${users.length})`, 'success');
                 } else {
                     log(`❌ Ошибка удаления ${user.id}`, 'err');
                 }
@@ -781,9 +809,10 @@
             await sleep(delays.betweenUsers);
         }
 
-        btn.disabled = false;
+        btnAll.disabled = false;
+        if (btnN) btnN.disabled = false;
         applyOrderAndRender();
-        log(`Групповое удаление завершено. Удалено: ${deleted}`, 'info');
+        log(`Удаление завершено. Удалено: ${deleted}`, 'info');
         if (deleted === 0) alert('Не удалось удалить ни одного пользователя.');
     }
 
@@ -835,55 +864,54 @@
         return posts;
     }
 
+    // ========== ИСПРАВЛЕНО: получение всех фотографий через photos.getAll ==========
     async function getPhotos(token, ownerId, limit) {
-        const res = await vkCall('photos.get', { owner_id: ownerId, count: 0 }, token);
+        // Используем photos.getAll, чтобы получить все фото (из всех альбомов)
+        const res = await vkCall('photos.getAll', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
         if (!res.error && res.response && res.response.count !== undefined) {
             total = res.response.count;
         }
         const realLimit = limit > 0 ? Math.min(limit, total) : total;
-        const photos = await getItemsWithPagination('photos.get', { owner_id: ownerId, album_id: 'profile' }, token, realLimit, null, getDelays().betweenPhotos);
+        // Для photos.getAll пагинация работает через offset, но ответ содержит items
+        const photos = await getItemsWithPagination('photos.getAll', { owner_id: ownerId }, token, realLimit, null, getDelays().betweenPhotos);
         return photos;
     }
 
+    // ========== ИСПРАВЛЕНО: получение клипов с фильтром ==========
     async function getClips(token, ownerId, limit) {
-        const res = await vkCall('video.get', { owner_id: ownerId, count: 0 }, token);
+        // Используем фильтр 'clip' прямо в запросе
+        const res = await vkCall('video.get', { owner_id: ownerId, filter: 'clip', count: 0 }, token);
         let total = 0;
         if (!res.error && res.response && res.response.count !== undefined) {
             total = res.response.count;
         }
         const realLimit = limit > 0 ? Math.min(limit, total) : total;
-        const videos = await getItemsWithPagination('video.get', { owner_id: ownerId }, token, realLimit, null, getDelays().betweenClips);
-        const clips = videos.filter(v => v.type === 'clip');
-        if (limit > 0 && clips.length > limit) return clips.slice(0, limit);
-        return clips;
+        const clips = await getItemsWithPagination('video.get', { owner_id: ownerId, filter: 'clip' }, token, realLimit, null, getDelays().betweenClips);
+        // clips уже отфильтрованы по типу clip, но на всякий случай оставим проверку
+        return clips.filter(v => v.type === 'clip');
     }
 
-    // ========== Исправленная обработка контента ==========
+    // ========== Обработка контента ==========
     async function processContentItems(items, contentType, token, ownerId, delays) {
         const activeSet = new Set();
-
         const config = {
             'post': {
                 commentsMethod: 'wall.getComments',
                 likeType: 'post',
                 commentLikeType: 'comment',
-                itemIdField: 'id'
             },
             'photo': {
                 commentsMethod: 'photos.getComments',
                 likeType: 'photo',
                 commentLikeType: 'photo_comment',
-                itemIdField: 'id'
             },
             'clip': {
                 commentsMethod: 'video.getComments',
                 likeType: 'video',
                 commentLikeType: 'video_comment',
-                itemIdField: 'id'
             }
         };
-
         const cfg = config[contentType];
         if (!cfg) return activeSet;
 
@@ -893,7 +921,7 @@
             const itemId = item.id;
             const owner = item.owner_id || ownerId;
 
-            // Лайки самого элемента
+            // Лайки
             const likesRes = await vkCall('likes.getList', {
                 type: cfg.likeType,
                 owner_id: owner,
@@ -903,9 +931,7 @@
             }, token);
             if (!likesRes.error && likesRes.response) {
                 const likers = likesRes.response.items || [];
-                for (const likerId of likers) {
-                    activeSet.add(likerId);
-                }
+                for (const likerId of likers) activeSet.add(likerId);
                 log(`${contentType} ${i+1}/${items.length}: +${likers.length} лайков`, 'info');
             }
             await sleep(delays.betweenLikes);
@@ -931,9 +957,7 @@
                         }, token);
                         if (!likeListRes.error && likeListRes.response) {
                             const commentLikers = likeListRes.response.items || [];
-                            for (const likerId of commentLikers) {
-                                activeSet.add(likerId);
-                            }
+                            for (const likerId of commentLikers) activeSet.add(likerId);
                         }
                         await sleep(delays.betweenLikes);
                     }
@@ -942,7 +966,6 @@
             }
             await sleep(delays.betweenComments);
 
-            // Обновляем прогресс
             processedCount++;
             const percent = totalToProcess > 0 ? (processedCount / totalToProcess) * 100 : 0;
             updateProgress(percent);
@@ -1118,9 +1141,8 @@
         if (startBtn) startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
-        // Скрываем групповую кнопку во время анализа
         document.getElementById('groupActions').classList.remove('visible');
-        log(`🚀 Запуск анализа v6.0 (финальная)`, 'info');
+        log(`🚀 Запуск анализа v6.1`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
@@ -1192,7 +1214,6 @@
             log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
             setStatus('Готово');
 
-            // Показываем групповую кнопку, если есть неактивные
             updateGroupActionsVisibility();
 
         } catch (e) {
@@ -1238,7 +1259,6 @@
         if (!container) return;
         if (filteredUsers.length === 0) {
             container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих фильтру/поиску'}</div>`;
-            // Если нет ни одного неактивного, скрываем групповую кнопку
             updateGroupActionsVisibility();
             return;
         }
@@ -1324,7 +1344,6 @@
     setMode('safe');
     setOrder('old');
     setFilter('all');
-    // Скрываем групповую кнопку изначально
     document.getElementById('groupActions').classList.remove('visible');
 </script>
 
