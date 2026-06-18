@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.3 (клипы без зависаний)</title>
+    <title>VK Activity Checker v6.4 (с last_seen)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -383,8 +383,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.3</h2>
-    <p class="desc">Быстрая загрузка клипов + пошаговый прогресс</p>
+    <h2>VK Activity Checker v6.4</h2>
+    <p class="desc">Сортировка по последнему визиту (last_seen) + исправленные логи</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -439,17 +439,12 @@
 
     <div class="content-checkboxes">
         <label><input type="checkbox" id="checkPhotos" checked> Проверять фотографии</label>
-        <label><input type="checkbox" id="checkClips" checked> Проверять клипы</label>
+        <!-- Клипы убраны -->
     </div>
 
     <div class="input-group">
         <label>Количество фотографий для проверки (0 = все)</label>
         <input type="number" id="photosLimit" value="50" min="0" step="1">
-    </div>
-
-    <div class="input-group">
-        <label>Количество клипов для проверки (0 = все)</label>
-        <input type="number" id="clipsLimit" value="50" min="0" step="1">
     </div>
 
     <div class="controls">
@@ -534,9 +529,7 @@
     let etaInterval = null;
 
     let checkPhotos = true;
-    let checkClips = true;
     let photosLimit = 50;
-    let clipsLimit = 50;
 
     const logDiv = document.getElementById('log');
     function safeUpdate(id, value) {
@@ -552,8 +545,7 @@
                 betweenComments: 200,
                 betweenUsers: 1000,
                 betweenPosts: 500,
-                betweenPhotos: 500,
-                betweenClips: 500
+                betweenPhotos: 500
             };
         } else {
             return {
@@ -562,8 +554,7 @@
                 betweenComments: 100,
                 betweenUsers: 500,
                 betweenPosts: 250,
-                betweenPhotos: 250,
-                betweenClips: 250
+                betweenPhotos: 250
             };
         }
     }
@@ -712,27 +703,53 @@
         }
     }
 
+    // ========== Вспомогательная функция форматирования времени отсутствия ==========
+    function formatLastSeen(timestamp) {
+        if (!timestamp) return 'неизвестно';
+        const now = Math.floor(Date.now() / 1000);
+        const diff = now - timestamp;
+        if (diff < 60) return 'только что';
+        if (diff < 3600) return Math.floor(diff / 60) + ' мин назад';
+        if (diff < 86400) return Math.floor(diff / 3600) + ' ч назад';
+        if (diff < 2592000) return Math.floor(diff / 86400) + ' дн назад';
+        if (diff < 31536000) return Math.floor(diff / 2592000) + ' мес назад';
+        return Math.floor(diff / 31536000) + ' лет назад';
+    }
+
     // ========== Сортировка и фильтрация ==========
     function applyOrderAndRender() {
         const sorted = [...inactiveUsers].sort((a, b) => {
             const aRecent = recentSet.has(a.id);
             const bRecent = recentSet.has(b.id);
+
+            // Сначала разделяем на recent и не-recent
             if (aRecent && !bRecent) {
                 return currentOrder === 'old' ? 1 : -1;
             }
             if (!aRecent && bRecent) {
                 return currentOrder === 'old' ? -1 : 1;
             }
+
+            // Оба в одной группе
             if (aRecent && bRecent) {
+                // Сортируем по индексу в recentList (новые в начале)
                 const idxA = recentList.indexOf(a.id);
                 const idxB = recentList.indexOf(b.id);
                 if (currentOrder === 'old') {
-                    return idxB - idxA;
+                    return idxB - idxA; // старые сверху (чем больше индекс, тем старше)
                 } else {
-                    return idxA - idxB;
+                    return idxA - idxB; // новые сверху
                 }
             }
-            return currentOrder === 'old' ? a.id - b.id : b.id - a.id;
+
+            // Оба не в recent – сортируем по last_seen (от старых к новым)
+            const aTime = a.last_seen ? a.last_seen.time : 0;
+            const bTime = b.last_seen ? b.last_seen.time : 0;
+            if (currentOrder === 'old') {
+                return aTime - bTime; // старые сверху (меньше время = раньше)
+            } else {
+                return bTime - aTime; // новые сверху
+            }
         });
         inactiveUsers = sorted;
         currentPage = 1;
@@ -743,6 +760,7 @@
     function getFilteredUsers() {
         if (currentFilter === 'all') return inactiveUsers;
         if (currentFilter === 'recent') return inactiveUsers.filter(u => recentSet.has(u.id));
+        // old
         return inactiveUsers.filter(u => !recentSet.has(u.id));
     }
 
@@ -851,7 +869,7 @@
         return items;
     }
 
-    // ========== Получение постов, фото, клипов (исправлено) ==========
+    // ========== Получение постов, фото ==========
     async function getPosts(token, ownerId, limit) {
         const res = await vkCall('wall.get', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
@@ -874,43 +892,6 @@
         return photos;
     }
 
-    // ===== НОВАЯ ВЕРСИЯ getClips – без пагинации, один запрос =====
-    async function getClips(token, ownerId, limit) {
-        log('Начинаем загрузку клипов...', 'info');
-        if (limit === 0) {
-            log('Лимит клипов 0, пропускаем', 'info');
-            return [];
-        }
-        try {
-            const count = Math.min(limit, 100);
-            const res = await vkCall('video.get', {
-                owner_id: ownerId,
-                filter: 'clip',
-                count: count,
-                offset: 0
-            }, token);
-            if (res.error) {
-                log('Ошибка при получении клипов: ' + res.error.error_msg, 'err');
-                return [];
-            }
-            let items = [];
-            if (Array.isArray(res.response)) {
-                items = res.response;
-            } else if (res.response && res.response.items) {
-                items = res.response.items;
-            } else {
-                log('Неожиданный формат ответа video.get', 'warn');
-                return [];
-            }
-            const clips = items.filter(v => v.type === 'clip');
-            log(`Загружено клипов: ${clips.length}`, 'info');
-            return clips;
-        } catch (e) {
-            log('Исключение при загрузке клипов: ' + e.message, 'err');
-            return [];
-        }
-    }
-
     // ========== Обработка контента ==========
     async function processContentItems(items, contentType, token, ownerId, delays) {
         const activeSet = new Set();
@@ -924,11 +905,6 @@
                 commentsMethod: 'photos.getComments',
                 likeType: 'photo',
                 commentLikeType: 'photo_comment',
-            },
-            'clip': {
-                commentsMethod: 'video.getComments',
-                likeType: 'video',
-                commentLikeType: 'video_comment',
             }
         };
         const cfg = config[contentType];
@@ -1006,7 +982,7 @@
         return myId;
     }
 
-    // ========== ШАГ 2: Сбор друзей и recent ==========
+    // ========== ШАГ 2: Сбор друзей с last_seen ==========
     async function collectAllFriends(token) {
         let all = [];
         let offset = 0;
@@ -1018,7 +994,7 @@
         while (hasMore && isRunning) {
             log(`Загрузка друзей: смещение ${offset}...`, 'info');
             const res = await vkCall('friends.get', {
-                fields: 'photo_50,first_name,last_name,deactivated',
+                fields: 'photo_50,first_name,last_name,deactivated,last_seen',
                 count: count,
                 offset: offset
             }, token);
@@ -1061,14 +1037,13 @@
         }
     }
 
-    // ========== ШАГ 3-5: Сбор активных с пошаговым прогрессом ==========
-    async function collectActiveUsers(token, ownerId, postsLimit, photosLimit, clipsLimit, checkPhotos, checkClips) {
+    // ========== ШАГ 3-4: Сбор активных ==========
+    async function collectActiveUsers(token, ownerId, postsLimit, photosLimit, checkPhotos) {
         const activeSet = new Set();
         const delays = getDelays();
 
         let posts = [];
         let photos = [];
-        let clips = [];
 
         // 1) Посты – прогресс 10%
         if (postsLimit !== 0) {
@@ -1086,15 +1061,7 @@
             updateProgress(25, 'загрузка...');
         }
 
-        // 3) Клипы – прогресс 40%
-        if (checkClips) {
-            setStage('Шаг 5/6: Загрузка клипов');
-            clips = await getClips(token, ownerId, clipsLimit);
-            log(`Загружено клипов: ${clips.length}`, 'info');
-            updateProgress(40, 'загрузка...');
-        }
-
-        const totalItems = posts.length + photos.length + clips.length;
+        const totalItems = posts.length + photos.length;
         if (totalItems === 0) {
             log('Нет контента для проверки активности.', 'warn');
             return activeSet;
@@ -1120,13 +1087,6 @@
             for (const id of photoActive) activeSet.add(id);
         }
 
-        // Обработка клипов
-        if (clips.length > 0 && checkClips) {
-            setStage(`Шаг 5/6: Обработка клипов (0/${clips.length})`);
-            const clipActive = await processContentItems(clips, 'clip', token, ownerId, delays);
-            for (const id of clipActive) activeSet.add(id);
-        }
-
         if (etaInterval) {
             clearInterval(etaInterval);
             etaInterval = null;
@@ -1136,7 +1096,7 @@
         return activeSet;
     }
 
-    // ========== ШАГ 6: Сравнение ==========
+    // ========== ШАГ 5: Сравнение ==========
     function findInactiveFriends(friends, activeSet) {
         const inactive = [];
         for (const friend of friends) {
@@ -1160,9 +1120,7 @@
 
         const postsLimitVal = parseInt(document.getElementById('postsLimit').value) || 0;
         const photosLimitVal = parseInt(document.getElementById('photosLimit').value) || 0;
-        const clipsLimitVal = parseInt(document.getElementById('clipsLimit').value) || 0;
         checkPhotos = document.getElementById('checkPhotos').checked;
-        checkClips = document.getElementById('checkClips').checked;
 
         isRunning = true;
         const startBtn = document.getElementById('startBtn');
@@ -1170,11 +1128,11 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
         document.getElementById('groupActions').classList.remove('visible');
-        log(`🚀 Запуск анализа v6.3`, 'info');
+        log(`🚀 Запуск анализа v6.4`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
-        log(`Проверка фото: ${checkPhotos}, клипов: ${checkClips}`, 'info');
+        log(`Проверка фото: ${checkPhotos}`, 'info');
         setStatus('Запуск...');
         updateProgress(0, 'загрузка...');
 
@@ -1212,7 +1170,7 @@
 
             await collectRecent(token);
 
-            activeUsers = await collectActiveUsers(token, ownerId, postsLimitVal, photosLimitVal, clipsLimitVal, checkPhotos, checkClips);
+            activeUsers = await collectActiveUsers(token, ownerId, postsLimitVal, photosLimitVal, checkPhotos);
 
             if (!isRunning || abortFlag) {
                 log('Анализ прерван', 'warn');
@@ -1223,7 +1181,7 @@
             }
 
             setStatus('Сравнение баз...');
-            setStage('Шаг 6/6: Сравнение');
+            setStage('Шаг 5/5: Сравнение');
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
@@ -1239,7 +1197,7 @@
             log(`   Всего друзей: ${allFriends.length}`, 'info');
             log(`   Активных: ${activeUsers.size}`, 'success');
             log(`   Неактивных: ${inactive.length}`, 'warn');
-            log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
+            log(`   Сортировка по last_seen (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
             setStatus('Готово');
 
             updateGroupActionsVisibility();
@@ -1298,6 +1256,8 @@
             const name = (user.first_name || '') + ' ' + (user.last_name || '');
             const isRecent = recentSet.has(user.id);
             const badge = isRecent ? '<span class="friend-badge recent">🆕 недавний</span>' : '<span class="friend-badge">📅 старый</span>';
+            const lastSeen = user.last_seen ? user.last_seen.time : null;
+            const lastSeenText = lastSeen ? 'был(а) ' + formatLastSeen(lastSeen) : 'неизвестно';
             html += `
                 <div class="user-card">
                     <div class="avatar">${avatar ? `<img src="${avatar}" alt="">` : ''}</div>
@@ -1309,6 +1269,7 @@
                         </div>
                         <div class="details">
                             <span>ID: ${user.id}</span>
+                            <span>${lastSeenText}</span>
                         </div>
                     </div>
                     <div class="actions">
