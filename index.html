@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.2 (Hints Fixed)</title>
+    <title>VK Activity Checker v6.1 (Hints Fixed)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -76,6 +76,8 @@
         .btn-start:disabled { background: #95a5a6; cursor: not-allowed; }
         .btn-stop { background: #faebeb; color: #e74c3c; }
         .btn-login { background: #f39c12; color: white; width: 100%; margin-top: 6px; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-success { background: #27ae60; color: white; }
         .btn-secondary { background: #95a5a6; color: white; }
         .btn-mode-safe { background: #27ae60; color: white; }
         .btn-mode-normal { background: #e67e22; color: white; }
@@ -160,12 +162,7 @@
         .log-err { color: #e74c3c; }
         .log-info { color: #3498db; }
 
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
-        .stats-grid .stat-item { text-align: center; padding: 10px; border-radius: 10px; background: #f8f9fa; }
-        .stats-grid .stat-item .num { font-size: 22px; font-weight: bold; color: #2c3e50; }
-        .stats-grid .stat-item .label { font-size: 11px; color: #95a5a6; }
-        .stats-grid .stat-item.active-stat .num { color: #27ae60; }
-        .stats-grid .stat-item.inactive-stat .num { color: #e74c3c; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #e74c3c; color: white; }
 
         .filter-bar { display: flex; gap: 10px; padding: 10px 0; flex-wrap: wrap; align-items: center; }
         .filter-bar input { padding: 8px 12px; border: 1px solid #dcdfe6; border-radius: 8px; font-size: 13px; background: white; flex: 1; min-width: 150px; }
@@ -178,6 +175,13 @@
         .order-selector { display: flex; gap: 10px; margin-bottom: 15px; }
         .order-selector button { flex: 1; padding: 10px; font-size: 13px; border-radius: 10px; }
         .order-selector .active-order { border: 3px solid #2c3e50; transform: scale(1.02); }
+        
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 10px 0; }
+        .stats-grid .stat-item { text-align: center; padding: 10px; border-radius: 10px; background: #f8f9fa; }
+        .stats-grid .stat-item .num { font-size: 22px; font-weight: bold; color: #2c3e50; }
+        .stats-grid .stat-item .label { font-size: 11px; color: #95a5a6; }
+        .stats-grid .stat-item.active-stat .num { color: #27ae60; }
+        .stats-grid .stat-item.inactive-stat .num { color: #e74c3c; }
 
         @media (max-width: 600px) {
             .controls { grid-template-columns: 1fr; }
@@ -192,8 +196,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.2</h2>
-    <p class="desc">Исправленный Hints Engine (Параметр order)</p>
+    <h2>VK Activity Checker v6.1</h2>
+    <p class="desc">Исправленный Hints Engine (Обход ограничений VK API)</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">🔑 ЛОГИН НА BARKOV</button>
@@ -281,6 +285,10 @@
     let currentMode = 'safe';
     let currentOrder = 'low';
     let abortFlag = false;
+
+    let startTime = null;
+    let processedCount = 0;
+    let totalToProcess = 0;
 
     const logDiv = document.getElementById('log');
     function safeUpdate(id, value) {
@@ -379,13 +387,14 @@
         return myId;
     }
 
+    // ИСПРАВЛЕННЫЙ двухэтапный сбор друзей для Hints
     async function collectAllFriends(token) {
         setStage('Сбор топа Hints');
         log(`Запрашиваем упорядоченные ID через чистый hints...`, 'info');
         
-        // 1. Получаем список ID. ИСПРАВЛЕНО: параметр должен быть order, а не sort
+        // 1. Получаем СТРОГО упорядоченный список ID без fields (иначе ВК игнорит hints)
         const hintsRes = await vkCall('friends.get', {
-            order: 'hints',
+            sort: 'hints',
             count: 10000 
         }, token);
         
@@ -395,7 +404,7 @@
         log(`Получено ${orderedIds.length} ID в порядке релевантности. Загружаем профили батчами...`, 'info');
         if (orderedIds.length === 0) return [];
 
-        // 2. Добираем инфу через безопасные батчи users.get по 300 штук
+        // 2. Добираем инфу (аватарки, имена) через безопасные батчи users.get по 300 штук
         let profilesMap = new Map();
         const chunkSize = 300;
         const delays = getDelays();
@@ -422,12 +431,12 @@
             await sleep(delays.friends);
         }
 
-        // 3. Собираем массив, сохраняя исходный порядок из orderedIds
+        // 3. Собираем итоговый массив, жестко сохраняя порядок из orderedIds
         let finalOrderedFriends = [];
         orderedIds.forEach((id, index) => {
             const profile = profilesMap.get(id);
             if (profile) {
-                profile.hintsIndex = index; 
+                profile.hintsIndex = index; // Сохраняем реальную позицию в топе
                 finalOrderedFriends.push(profile);
             }
         });
@@ -465,7 +474,7 @@
             }
             await sleep(delays.likes);
 
-            // Комментарии
+            // Комменты
             const commentsRes = await vkCall('wall.getComments', { owner_id: myId, post_id: post.id, count: 100 }, token);
             if (!commentsRes.error && commentsRes.response) {
                 (commentsRes.response.items || []).forEach(c => activeSet.add(c.from_id));
@@ -487,7 +496,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
         
-        log(`🚀 Запуск анализа v6.2 (Hints Engine Fixed)`, 'info');
+        log(`🚀 Запуск анализа v6.1 (Hints Fixed Engine)`, 'info');
         setStatus('Запуск...');
 
         try {
