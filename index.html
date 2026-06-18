@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.0</title>
+    <title>VK Activity Checker v6.0 (клипы)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -404,8 +404,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.0</h2>
-    <p class="desc">Сортировка по дате добавления через friends.getRecent + проверка фото и видео</p>
+    <h2>VK Activity Checker v6.0 (клипы)</h2>
+    <p class="desc">Сортировка по дате добавления через friends.getRecent + проверка стены, фото и клипов</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -456,7 +456,7 @@
             </div>
             <div class="check-group">
                 <input type="checkbox" id="checkVideos" checked>
-                <label for="checkVideos">Видеозаписи</label>
+                <label for="checkVideos">Клипы</label>
                 <input type="number" id="videosLimit" value="50" min="0" step="1">
             </div>
         </div>
@@ -555,7 +555,6 @@
     let totalToProcess = 0;
     let etaInterval = null;
 
-    // Прогресс по этапам
     let totalStages = 0;
     let currentStage = 0;
 
@@ -847,7 +846,6 @@
     async function batchDelete() {
         const count = parseInt(document.getElementById('batchDeleteCount').value);
         if (!count || count < 1) { alert('Введите корректное количество'); return; }
-        // Получаем текущий отфильтрованный список с учётом поиска и фильтра
         const search = document.getElementById('searchInput').value.toLowerCase();
         let list = inactiveUsers.filter(u => {
             if (search) {
@@ -858,7 +856,6 @@
             if (filterType === 'old' && recentSet.has(u.id)) return false;
             return true;
         });
-        // Сортировка уже применена к inactiveUsers, берём первые count
         const toDelete = list.slice(0, count);
         if (toDelete.length === 0) { alert('Нет пользователей для удаления'); return; }
         if (!confirm(`Удалить ${toDelete.length} пользователей?`)) return;
@@ -900,7 +897,6 @@
 
     // ===== ШАГ 2: Сбор друзей с прогрессом =====
     async function collectAllFriends(token) {
-        // Получаем общее количество
         const countRes = await vkCall('friends.get', { count: 0 }, token);
         if (countRes.error) {
             log('Ошибка получения количества друзей: ' + countRes.error.error_msg, 'err');
@@ -931,7 +927,6 @@
             all = all.concat(items);
             const loaded = all.length;
             const percent = (loaded / totalFriends) * 100;
-            // Общий прогресс: текущий этап (1) имеет вес 1/totalStages
             const overall = ((currentStage) / totalStages) * 100 + (percent / totalStages);
             updateProgress(overall);
 
@@ -946,16 +941,15 @@
         return filtered;
     }
 
-    // ===== ШАГ 3: Сбор активных по всем типам контента =====
+    // ===== ШАГ 3: Сбор активных по всем типам контента (с клипами вместо видео) =====
     async function collectActiveUsers(token, settings) {
         const activeSet = new Set();
         const delays = getDelays();
 
-        // Формируем список этапов
         const stages = [];
         if (settings.checkWall && settings.wallLimit > 0) stages.push({ type: 'wall', limit: settings.wallLimit, label: 'Стена' });
         if (settings.checkPhotos && settings.photosLimit > 0) stages.push({ type: 'photo', limit: settings.photosLimit, label: 'Фотографии' });
-        if (settings.checkVideos && settings.videosLimit > 0) stages.push({ type: 'video', limit: settings.videosLimit, label: 'Видеозаписи' });
+        if (settings.checkVideos && settings.videosLimit > 0) stages.push({ type: 'clip', limit: settings.videosLimit, label: 'Клипы' });
 
         if (stages.length === 0) {
             log('Не выбрано ни одного типа контента для проверки активности', 'warn');
@@ -966,7 +960,6 @@
         for (const stage of stages) {
             stageIndex++;
             setStage(`Проверка ${stage.label} (этап ${currentStage+1}/${totalStages})`);
-            // Получаем список объектов
             let items = [];
             if (stage.type === 'wall') {
                 const res = await vkCall('wall.get', {
@@ -977,7 +970,6 @@
                 }, token);
                 if (!res.error) items = res.response.items || [];
             } else if (stage.type === 'photo') {
-                // Используем альбом 'profile' (фото профиля)
                 const res = await vkCall('photos.get', {
                     owner_id: myId,
                     album_id: 'profile',
@@ -985,8 +977,9 @@
                     offset: 0
                 }, token);
                 if (!res.error) items = res.response.items || [];
-            } else if (stage.type === 'video') {
-                const res = await vkCall('video.get', {
+            } else if (stage.type === 'clip') {
+                // Используем метод video.getClips для получения клипов
+                const res = await vkCall('video.getClips', {
                     owner_id: myId,
                     count: Math.min(stage.limit, 200),
                     offset: 0
@@ -996,7 +989,6 @@
 
             if (items.length === 0) {
                 log(`Нет ${stage.label} для проверки`, 'warn');
-                // Переход к следующему этапу
                 currentStage++;
                 continue;
             }
@@ -1006,14 +998,13 @@
             for (const item of items) {
                 if (!isRunning || abortFlag) break;
                 itemIndex++;
-                // Прогресс внутри этапа
                 const stageProgress = (itemIndex / items.length) * 100;
                 const overall = ((currentStage) / totalStages) * 100 + (stageProgress / totalStages);
                 updateProgress(overall);
 
-                // Лайки
+                // Лайки (тип для клипов такой же как для видео — 'video')
                 const likesRes = await vkCall('likes.getList', {
-                    type: stage.type === 'wall' ? 'post' : stage.type === 'photo' ? 'photo' : 'video',
+                    type: 'video',  // клипы тоже видео
                     owner_id: myId,
                     item_id: item.id,
                     count: 1000,
@@ -1028,7 +1019,7 @@
                 }
                 await sleep(delays.betweenLikes);
 
-                // Комментарии
+                // Комментарии (для клипов используем video.getComments)
                 let comments = [];
                 if (stage.type === 'wall') {
                     const commentsRes = await vkCall('wall.getComments', {
@@ -1046,7 +1037,7 @@
                         offset: 0
                     }, token);
                     if (!commentsRes.error) comments = commentsRes.response.items || [];
-                } else if (stage.type === 'video') {
+                } else if (stage.type === 'clip') {
                     const commentsRes = await vkCall('video.getComments', {
                         owner_id: myId,
                         video_id: item.id,
@@ -1058,7 +1049,6 @@
 
                 for (const comment of comments) {
                     activeSet.add(comment.from_id);
-                    // Лайки комментариев
                     const likeListRes = await vkCall('likes.getList', {
                         type: 'comment',
                         owner_id: myId,
@@ -1077,7 +1067,6 @@
                 log(`${stage.label} ${itemIndex}/${items.length}: +${comments.length} комментариев`, 'info');
                 await sleep(delays.betweenPosts);
             }
-            // Завершили этап
             currentStage++;
         }
 
@@ -1107,7 +1096,6 @@
         abortFlag = false;
 
         const settings = getContentSettings();
-        // Проверка: хотя бы один тип включён и лимит > 0
         const anyEnabled = (settings.checkWall && settings.wallLimit > 0) ||
                            (settings.checkPhotos && settings.photosLimit > 0) ||
                            (settings.checkVideos && settings.videosLimit > 0);
@@ -1121,7 +1109,7 @@
         startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
-        log(`🚀 Запуск анализа v6.0`, 'info');
+        log(`🚀 Запуск анализа v6.0 (клипы)`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         setStatus('Запуск...');
@@ -1136,7 +1124,6 @@
         }
 
         try {
-            // Определяем общее количество этапов
             totalStages = 1; // друзья
             if (settings.checkWall && settings.wallLimit > 0) totalStages++;
             if (settings.checkPhotos && settings.photosLimit > 0) totalStages++;
@@ -1144,11 +1131,9 @@
             totalStages++; // сравнение
             currentStage = 0;
 
-            // ШАГ 1: ID
             const ownerId = await getMyId(token);
             if (!ownerId) throw new Error('Не удалось получить ID');
 
-            // ШАГ 2: Друзья
             setStatus('Сбор базы друзей...');
             allFriends = await collectAllFriends(token);
             if (!allFriends) throw new Error('Ошибка сбора друзей');
@@ -1160,7 +1145,6 @@
                 return;
             }
 
-            // ШАГ 3: Активные
             setStatus('Сбор базы активных...');
             activeUsers = await collectActiveUsers(token, settings);
             if (!isRunning || abortFlag) {
@@ -1171,13 +1155,11 @@
                 return;
             }
 
-            // ШАГ 4: Сравнение
             setStatus('Сравнение баз...');
             setStage(`Сравнение (этап ${currentStage+1}/${totalStages})`);
             const inactive = findInactiveFriends(allFriends, activeUsers);
             inactiveUsers = inactive;
 
-            // Применяем сортировку по recent
             applyOrderAndRender();
             const statsGrid = document.getElementById('statsGrid');
             if (statsGrid) statsGrid.style.display = 'grid';
@@ -1185,7 +1167,6 @@
             safeUpdate('statActive', activeUsers.size);
             safeUpdate('statInactive', inactive.length);
 
-            // Завершаем прогресс
             updateProgress(100, 'завершено');
             log(`✅ Анализ завершён!`, 'success');
             log(`   Всего друзей: ${allFriends.length}`, 'info');
