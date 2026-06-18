@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.2 (пошаговый прогресс)</title>
+    <title>VK Activity Checker v6.3 (клипы без зависаний)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -383,8 +383,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.2</h2>
-    <p class="desc">Пошаговый прогресс + исправленные клипы</p>
+    <h2>VK Activity Checker v6.3</h2>
+    <p class="desc">Быстрая загрузка клипов + пошаговый прогресс</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -851,7 +851,7 @@
         return items;
     }
 
-    // ========== Получение постов, фото, клипов ==========
+    // ========== Получение постов, фото, клипов (исправлено) ==========
     async function getPosts(token, ownerId, limit) {
         const res = await vkCall('wall.get', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
@@ -863,7 +863,6 @@
         return posts;
     }
 
-    // Фотографии: photos.getAll (все альбомы)
     async function getPhotos(token, ownerId, limit) {
         const res = await vkCall('photos.getAll', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
@@ -875,33 +874,41 @@
         return photos;
     }
 
-    // Клипы: video.get с filter='clip' и owner_id
+    // ===== НОВАЯ ВЕРСИЯ getClips – без пагинации, один запрос =====
     async function getClips(token, ownerId, limit) {
         log('Начинаем загрузку клипов...', 'info');
         if (limit === 0) {
             log('Лимит клипов 0, пропускаем', 'info');
             return [];
         }
-        // Получаем общее количество
-        const res = await vkCall('video.get', { owner_id: ownerId, filter: 'clip', count: 0 }, token);
-        if (res.error) {
-            log('Ошибка при получении количества клипов: ' + res.error.error_msg, 'err');
+        try {
+            const count = Math.min(limit, 100);
+            const res = await vkCall('video.get', {
+                owner_id: ownerId,
+                filter: 'clip',
+                count: count,
+                offset: 0
+            }, token);
+            if (res.error) {
+                log('Ошибка при получении клипов: ' + res.error.error_msg, 'err');
+                return [];
+            }
+            let items = [];
+            if (Array.isArray(res.response)) {
+                items = res.response;
+            } else if (res.response && res.response.items) {
+                items = res.response.items;
+            } else {
+                log('Неожиданный формат ответа video.get', 'warn');
+                return [];
+            }
+            const clips = items.filter(v => v.type === 'clip');
+            log(`Загружено клипов: ${clips.length}`, 'info');
+            return clips;
+        } catch (e) {
+            log('Исключение при загрузке клипов: ' + e.message, 'err');
             return [];
         }
-        let total = 0;
-        if (res.response && res.response.count !== undefined) {
-            total = res.response.count;
-        }
-        log(`Всего клипов: ${total}`, 'info');
-        if (total === 0) return [];
-
-        const realLimit = limit > 0 ? Math.min(limit, total) : total;
-        log(`Загружаем ${realLimit} клипов...`, 'info');
-        const clips = await getItemsWithPagination('video.get', { owner_id: ownerId, filter: 'clip' }, token, realLimit, null, getDelays().betweenClips);
-        // Фильтруем на случай, если пришли не клипы
-        const filtered = clips.filter(v => v.type === 'clip');
-        log(`Загружено клипов: ${filtered.length}`, 'info');
-        return filtered;
     }
 
     // ========== Обработка контента ==========
@@ -1093,28 +1100,27 @@
             return activeSet;
         }
 
-        // Устанавливаем общее количество для обработки
         totalToProcess = totalItems;
         processedCount = 0;
         startTime = Date.now();
         if (etaInterval) clearInterval(etaInterval);
         etaInterval = setInterval(updateETA, 2000);
 
-        // Обработка постов – от 40% до 60%
+        // Обработка постов
         if (posts.length > 0) {
             setStage(`Шаг 3/6: Обработка постов (0/${posts.length})`);
             const postActive = await processContentItems(posts, 'post', token, ownerId, delays);
             for (const id of postActive) activeSet.add(id);
         }
 
-        // Обработка фотографий – от 60% до 80%
+        // Обработка фотографий
         if (photos.length > 0 && checkPhotos) {
             setStage(`Шаг 4/6: Обработка фотографий (0/${photos.length})`);
             const photoActive = await processContentItems(photos, 'photo', token, ownerId, delays);
             for (const id of photoActive) activeSet.add(id);
         }
 
-        // Обработка клипов – от 80% до 100%
+        // Обработка клипов
         if (clips.length > 0 && checkClips) {
             setStage(`Шаг 5/6: Обработка клипов (0/${clips.length})`);
             const clipActive = await processContentItems(clips, 'clip', token, ownerId, delays);
@@ -1164,7 +1170,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
         document.getElementById('groupActions').classList.remove('visible');
-        log(`🚀 Запуск анализа v6.2`, 'info');
+        log(`🚀 Запуск анализа v6.3`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
