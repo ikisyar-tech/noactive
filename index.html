@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.0 (с клипами и разделением)</title>
+    <title>VK Activity Checker v6.0 (исправленная)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -371,7 +371,7 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.0</h2>
+    <h2>VK Activity Checker v6.0 (исправленная)</h2>
     <p class="desc">Сортировка по дате добавления (friends.getRecent) + клипы и разделение</p>
 
     <div class="barkov-box">
@@ -746,10 +746,8 @@
                 const res = await vkCall('friends.delete', { user_id: user.id }, currentToken);
                 if (res.response && (res.response.success === 1 || res.response === 1)) {
                     deleted++;
-                    // удаляем из общих списков
                     allFriends = allFriends.filter(u => u.id !== user.id);
                     inactiveUsers = inactiveUsers.filter(u => u.id !== user.id);
-                    // обновляем статистику
                     safeUpdate('statTotal', allFriends.length);
                     safeUpdate('statInactive', inactiveUsers.length);
                     log(`✅ Удалён ${user.id} (${deleted}/${list.length})`, 'success');
@@ -829,7 +827,6 @@
     }
 
     async function getClips(token, ownerId, limit) {
-        // Получаем все видео и фильтруем по типу 'clip'
         const res = await vkCall('video.get', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
         if (!res.error && res.response && res.response.count !== undefined) {
@@ -838,27 +835,48 @@
         const realLimit = limit > 0 ? Math.min(limit, total) : total;
         const videos = await getItemsWithPagination('video.get', { owner_id: ownerId }, token, realLimit, null, getDelays().betweenClips);
         const clips = videos.filter(v => v.type === 'clip');
-        // clips уже ограничены по количеству, но может быть меньше из-за фильтрации
         if (limit > 0 && clips.length > limit) return clips.slice(0, limit);
         return clips;
     }
 
-    // ========== Обработка лайков и комментариев для элементов ==========
-    async function processContentItems(items, type, token, ownerId, delays) {
+    // ========== Исправленная обработка контента ==========
+    async function processContentItems(items, contentType, token, ownerId, delays) {
         const activeSet = new Set();
+
+        // Определяем методы и типы для каждого типа контента
+        const config = {
+            'post': {
+                commentsMethod: 'wall.getComments',
+                likeType: 'post',
+                commentLikeType: 'comment',
+                itemIdField: 'id'
+            },
+            'photo': {
+                commentsMethod: 'photos.getComments',
+                likeType: 'photo',
+                commentLikeType: 'photo_comment',
+                itemIdField: 'id'
+            },
+            'clip': {
+                commentsMethod: 'video.getComments',
+                likeType: 'video',
+                commentLikeType: 'video_comment',
+                itemIdField: 'id'
+            }
+        };
+
+        const cfg = config[contentType];
+        if (!cfg) return activeSet;
+
         for (let i = 0; i < items.length; i++) {
             if (!isRunning || abortFlag) break;
             const item = items[i];
             const itemId = item.id;
             const owner = item.owner_id || ownerId;
-            let methodType = type;
-            if (type === 'post') methodType = 'post';
-            else if (type === 'photo') methodType = 'photo';
-            else if (type === 'clip') methodType = 'video'; // для клипов используем video
 
-            // Лайки
+            // Лайки самого элемента (поста, фото, видео)
             const likesRes = await vkCall('likes.getList', {
-                type: methodType,
+                type: cfg.likeType,
                 owner_id: owner,
                 item_id: itemId,
                 count: 1000,
@@ -869,48 +887,43 @@
                 for (const likerId of likers) {
                     activeSet.add(likerId);
                 }
-                log(`${type} ${i+1}/${items.length}: +${likers.length} лайков`, 'info');
+                log(`${contentType} ${i+1}/${items.length}: +${likers.length} лайков`, 'info');
             }
             await sleep(delays.betweenLikes);
 
-            // Комментарии (для постов, фото, клипов)
-            let commentsMethod = '';
-            if (type === 'post') commentsMethod = 'wall.getComments';
-            else if (type === 'photo') commentsMethod = 'photos.getComments';
-            else if (type === 'clip') commentsMethod = 'video.getComments';
-
-            if (commentsMethod) {
-                const commentsRes = await vkCall(commentsMethod, {
-                    owner_id: owner,
-                    item_id: itemId,
-                    count: 100,
-                    offset: 0
-                }, token);
-                if (!commentsRes.error && commentsRes.response) {
-                    const comments = commentsRes.response.items || [];
-                    for (const comment of comments) {
-                        activeSet.add(comment.from_id);
-                        if (comment.likes && comment.likes.count > 0) {
-                            const likeListRes = await vkCall('likes.getList', {
-                                type: methodType === 'video' ? 'video' : methodType, // для клипов тоже video
-                                owner_id: owner,
-                                item_id: comment.id,
-                                count: 1000,
-                                filter: 'likes'
-                            }, token);
-                            if (!likeListRes.error && likeListRes.response) {
-                                const commentLikers = likeListRes.response.items || [];
-                                for (const likerId of commentLikers) {
-                                    activeSet.add(likerId);
-                                }
+            // Комментарии
+            const commentsRes = await vkCall(cfg.commentsMethod, {
+                owner_id: owner,
+                item_id: itemId,
+                count: 100,
+                offset: 0
+            }, token);
+            if (!commentsRes.error && commentsRes.response) {
+                const comments = commentsRes.response.items || [];
+                for (const comment of comments) {
+                    // автор коммента
+                    activeSet.add(comment.from_id);
+                    // лайки коммента
+                    if (comment.likes && comment.likes.count > 0) {
+                        const likeListRes = await vkCall('likes.getList', {
+                            type: cfg.commentLikeType,
+                            owner_id: owner,
+                            item_id: comment.id,
+                            count: 1000,
+                            filter: 'likes'
+                        }, token);
+                        if (!likeListRes.error && likeListRes.response) {
+                            const commentLikers = likeListRes.response.items || [];
+                            for (const likerId of commentLikers) {
+                                activeSet.add(likerId);
                             }
-                            await sleep(delays.betweenLikes);
                         }
+                        await sleep(delays.betweenLikes);
                     }
-                    log(`${type} ${i+1}/${items.length}: +${comments.length} комментариев`, 'info');
                 }
-                await sleep(delays.betweenComments);
+                log(`${contentType} ${i+1}/${items.length}: +${comments.length} комментариев`, 'info');
             }
+            await sleep(delays.betweenComments);
 
             // Обновляем прогресс
             processedCount++;
@@ -1019,7 +1032,6 @@
             log(`Загружено клипов: ${clips.length}`, 'info');
         }
 
-        // Общее количество элементов для обработки
         const totalItems = posts.length + photos.length + clips.length;
         if (totalItems === 0) {
             log('Нет контента для проверки активности.', 'warn');
@@ -1095,7 +1107,7 @@
         if (startBtn) startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
-        log(`🚀 Запуск анализа v6.0 (friends.getRecent + клипы)`, 'info');
+        log(`🚀 Запуск анализа v6.0 (исправленная)`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
@@ -1112,7 +1124,6 @@
         }
 
         try {
-            // ШАГ 1
             const ownerId = await getMyId(token);
             if (!ownerId) {
                 isRunning = false;
@@ -1121,8 +1132,6 @@
                 return;
             }
 
-            // ШАГ 2
-            setStatus('Сбор базы друзей...');
             allFriends = await collectAllFriends(token);
             if (!allFriends) {
                 isRunning = false;
@@ -1138,11 +1147,8 @@
                 return;
             }
 
-            // Получение recent
             await collectRecent(token);
 
-            // ШАГ 3-5
-            setStatus('Сбор базы активных...');
             activeUsers = await collectActiveUsers(token, ownerId, postsLimitVal, photosLimitVal, clipsLimitVal, checkPhotos, checkClips);
 
             if (!isRunning || abortFlag) {
@@ -1153,7 +1159,6 @@
                 return;
             }
 
-            // ШАГ 6
             setStatus('Сравнение баз...');
             setStage('Шаг 6/6: Сравнение');
             const inactive = findInactiveFriends(allFriends, activeUsers);
@@ -1165,7 +1170,6 @@
             safeUpdate('statTotal', allFriends.length);
             safeUpdate('statActive', activeUsers.size);
             safeUpdate('statInactive', inactive.length);
-            // обновляем кнопку удаления
             const delBtn = document.getElementById('deleteAllBtn');
             if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
 
@@ -1253,7 +1257,6 @@
         }
 
         container.innerHTML = html;
-        // обновляем кнопку удаления
         const delBtn = document.getElementById('deleteAllBtn');
         if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
     }
