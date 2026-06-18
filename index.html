@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.0 (исправленная)</title>
+    <title>VK Activity Checker v6.0 (финальная)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -129,10 +129,13 @@
         }
 
         .group-actions {
-            display: flex;
+            display: none; /* скрыта по умолчанию, показывается только при наличии неактивных */
             gap: 10px;
             margin-bottom: 15px;
             flex-wrap: wrap;
+        }
+        .group-actions.visible {
+            display: flex;
         }
         .group-actions button {
             padding: 10px 20px;
@@ -371,7 +374,7 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.0 (исправленная)</h2>
+    <h2>VK Activity Checker v6.0 (финальная)</h2>
     <p class="desc">Сортировка по дате добавления (friends.getRecent) + клипы и разделение</p>
 
     <div class="barkov-box">
@@ -413,7 +416,8 @@
         <button id="filterOld" class="btn-filter btn-filter-old" onclick="setFilter('old')">📅 Старые</button>
     </div>
 
-    <div class="group-actions">
+    <!-- Блок групповых действий – изначально скрыт, показывается только при наличии неактивных -->
+    <div class="group-actions" id="groupActions">
         <button id="deleteAllBtn" class="btn-danger" onclick="deleteAllFiltered()">🗑 Удалить всех (0)</button>
     </div>
 
@@ -687,6 +691,22 @@
         if (startBtn) startBtn.disabled = false;
     }
 
+    // ========== Управление видимостью групповой кнопки ==========
+    function updateGroupActionsVisibility() {
+        const container = document.getElementById('groupActions');
+        const btn = document.getElementById('deleteAllBtn');
+        if (!container || !btn) return;
+
+        const count = getFilteredUsers().length;
+        btn.textContent = `🗑 Удалить всех (${count})`;
+
+        if (count > 0 && !isRunning) {
+            container.classList.add('visible');
+        } else {
+            container.classList.remove('visible');
+        }
+    }
+
     // ========== Сортировка и фильтрация ==========
     function applyOrderAndRender() {
         const sorted = [...inactiveUsers].sort((a, b) => {
@@ -712,6 +732,7 @@
         inactiveUsers = sorted;
         currentPage = 1;
         renderPage();
+        updateGroupActionsVisibility();
     }
 
     function getFilteredUsers() {
@@ -761,7 +782,6 @@
         }
 
         btn.disabled = false;
-        btn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
         applyOrderAndRender();
         log(`Групповое удаление завершено. Удалено: ${deleted}`, 'info');
         if (deleted === 0) alert('Не удалось удалить ни одного пользователя.');
@@ -843,7 +863,6 @@
     async function processContentItems(items, contentType, token, ownerId, delays) {
         const activeSet = new Set();
 
-        // Определяем методы и типы для каждого типа контента
         const config = {
             'post': {
                 commentsMethod: 'wall.getComments',
@@ -874,7 +893,7 @@
             const itemId = item.id;
             const owner = item.owner_id || ownerId;
 
-            // Лайки самого элемента (поста, фото, видео)
+            // Лайки самого элемента
             const likesRes = await vkCall('likes.getList', {
                 type: cfg.likeType,
                 owner_id: owner,
@@ -901,9 +920,7 @@
             if (!commentsRes.error && commentsRes.response) {
                 const comments = commentsRes.response.items || [];
                 for (const comment of comments) {
-                    // автор коммента
                     activeSet.add(comment.from_id);
-                    // лайки коммента
                     if (comment.likes && comment.likes.count > 0) {
                         const likeListRes = await vkCall('likes.getList', {
                             type: cfg.commentLikeType,
@@ -1011,21 +1028,18 @@
         let photos = [];
         let clips = [];
 
-        // Посты
         if (postsLimit !== 0) {
             setStage('Шаг 3/6: Загрузка постов');
             posts = await getPosts(token, ownerId, postsLimit);
             log(`Загружено постов: ${posts.length}`, 'info');
         }
 
-        // Фотографии
         if (checkPhotos) {
             setStage('Шаг 4/6: Загрузка фотографий');
             photos = await getPhotos(token, ownerId, photosLimit);
             log(`Загружено фотографий: ${photos.length}`, 'info');
         }
 
-        // Клипы
         if (checkClips) {
             setStage('Шаг 5/6: Загрузка клипов');
             clips = await getClips(token, ownerId, clipsLimit);
@@ -1044,21 +1058,18 @@
         if (etaInterval) clearInterval(etaInterval);
         etaInterval = setInterval(updateETA, 2000);
 
-        // Обработка постов
         if (posts.length > 0) {
             setStage(`Шаг 3/6: Обработка постов (0/${posts.length})`);
             const postActive = await processContentItems(posts, 'post', token, ownerId, delays);
             for (const id of postActive) activeSet.add(id);
         }
 
-        // Обработка фотографий
         if (photos.length > 0 && checkPhotos) {
             setStage(`Шаг 4/6: Обработка фотографий (0/${photos.length})`);
             const photoActive = await processContentItems(photos, 'photo', token, ownerId, delays);
             for (const id of photoActive) activeSet.add(id);
         }
 
-        // Обработка клипов
         if (clips.length > 0 && checkClips) {
             setStage(`Шаг 5/6: Обработка клипов (0/${clips.length})`);
             const clipActive = await processContentItems(clips, 'clip', token, ownerId, delays);
@@ -1107,7 +1118,9 @@
         if (startBtn) startBtn.disabled = true;
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
-        log(`🚀 Запуск анализа v6.0 (исправленная)`, 'info');
+        // Скрываем групповую кнопку во время анализа
+        document.getElementById('groupActions').classList.remove('visible');
+        log(`🚀 Запуск анализа v6.0 (финальная)`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
@@ -1170,8 +1183,6 @@
             safeUpdate('statTotal', allFriends.length);
             safeUpdate('statActive', activeUsers.size);
             safeUpdate('statInactive', inactive.length);
-            const delBtn = document.getElementById('deleteAllBtn');
-            if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
 
             updateProgress(100, 'завершено');
             log(`✅ Анализ завершён!`, 'success');
@@ -1180,6 +1191,9 @@
             log(`   Неактивных: ${inactive.length}`, 'warn');
             log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
             setStatus('Готово');
+
+            // Показываем групповую кнопку, если есть неактивные
+            updateGroupActionsVisibility();
 
         } catch (e) {
             log('Ошибка: ' + e.message, 'err');
@@ -1224,6 +1238,8 @@
         if (!container) return;
         if (filteredUsers.length === 0) {
             container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих фильтру/поиску'}</div>`;
+            // Если нет ни одного неактивного, скрываем групповую кнопку
+            updateGroupActionsVisibility();
             return;
         }
 
@@ -1257,8 +1273,7 @@
         }
 
         container.innerHTML = html;
-        const delBtn = document.getElementById('deleteAllBtn');
-        if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
+        updateGroupActionsVisibility();
     }
 
     function prevPage() {
@@ -1277,8 +1292,6 @@
             applyOrderAndRender();
             safeUpdate('statInactive', inactiveUsers.length);
             safeUpdate('statTotal', allFriends.length);
-            const delBtn = document.getElementById('deleteAllBtn');
-            if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
             log(`Пользователь ${userId} оставлен`, 'success');
         }
     }
@@ -1295,8 +1308,6 @@
                         applyOrderAndRender();
                         safeUpdate('statInactive', inactiveUsers.length);
                         safeUpdate('statTotal', allFriends.length);
-                        const delBtn = document.getElementById('deleteAllBtn');
-                        if (delBtn) delBtn.textContent = '🗑 Удалить всех (' + getFilteredUsers().length + ')';
                     } else {
                         log(`❌ Ошибка удаления ${userId}`, 'err');
                         alert('Не удалось удалить пользователя.');
@@ -1313,6 +1324,8 @@
     setMode('safe');
     setOrder('old');
     setFilter('all');
+    // Скрываем групповую кнопку изначально
+    document.getElementById('groupActions').classList.remove('visible');
 </script>
 
 </body>
