@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v6.1 (финальная)</title>
+    <title>VK Activity Checker v6.2 (пошаговый прогресс)</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -383,8 +383,8 @@
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v6.1 (финальная)</h2>
-    <p class="desc">Сортировка по дате добавления (friends.getRecent) + клипы и разделение</p>
+    <h2>VK Activity Checker v6.2</h2>
+    <p class="desc">Пошаговый прогресс + исправленные клипы</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -425,7 +425,6 @@
         <button id="filterOld" class="btn-filter btn-filter-old" onclick="setFilter('old')">📅 Старые</button>
     </div>
 
-    <!-- Блок групповых действий – появляется после анализа -->
     <div class="group-actions" id="groupActions">
         <button id="deleteAllBtn" class="btn-danger" onclick="deleteAllFiltered()">🗑 Удалить всех (0)</button>
         <span style="font-size:13px; color:#2c3e50;">или</span>
@@ -864,32 +863,45 @@
         return posts;
     }
 
-    // ========== ИСПРАВЛЕНО: получение всех фотографий через photos.getAll ==========
+    // Фотографии: photos.getAll (все альбомы)
     async function getPhotos(token, ownerId, limit) {
-        // Используем photos.getAll, чтобы получить все фото (из всех альбомов)
         const res = await vkCall('photos.getAll', { owner_id: ownerId, count: 0 }, token);
         let total = 0;
         if (!res.error && res.response && res.response.count !== undefined) {
             total = res.response.count;
         }
         const realLimit = limit > 0 ? Math.min(limit, total) : total;
-        // Для photos.getAll пагинация работает через offset, но ответ содержит items
         const photos = await getItemsWithPagination('photos.getAll', { owner_id: ownerId }, token, realLimit, null, getDelays().betweenPhotos);
         return photos;
     }
 
-    // ========== ИСПРАВЛЕНО: получение клипов с фильтром ==========
+    // Клипы: video.get с filter='clip' и owner_id
     async function getClips(token, ownerId, limit) {
-        // Используем фильтр 'clip' прямо в запросе
+        log('Начинаем загрузку клипов...', 'info');
+        if (limit === 0) {
+            log('Лимит клипов 0, пропускаем', 'info');
+            return [];
+        }
+        // Получаем общее количество
         const res = await vkCall('video.get', { owner_id: ownerId, filter: 'clip', count: 0 }, token);
+        if (res.error) {
+            log('Ошибка при получении количества клипов: ' + res.error.error_msg, 'err');
+            return [];
+        }
         let total = 0;
-        if (!res.error && res.response && res.response.count !== undefined) {
+        if (res.response && res.response.count !== undefined) {
             total = res.response.count;
         }
+        log(`Всего клипов: ${total}`, 'info');
+        if (total === 0) return [];
+
         const realLimit = limit > 0 ? Math.min(limit, total) : total;
+        log(`Загружаем ${realLimit} клипов...`, 'info');
         const clips = await getItemsWithPagination('video.get', { owner_id: ownerId, filter: 'clip' }, token, realLimit, null, getDelays().betweenClips);
-        // clips уже отфильтрованы по типу clip, но на всякий случай оставим проверку
-        return clips.filter(v => v.type === 'clip');
+        // Фильтруем на случай, если пришли не клипы
+        const filtered = clips.filter(v => v.type === 'clip');
+        log(`Загружено клипов: ${filtered.length}`, 'info');
+        return filtered;
     }
 
     // ========== Обработка контента ==========
@@ -1042,7 +1054,7 @@
         }
     }
 
-    // ========== ШАГ 3-5: Сбор активных ==========
+    // ========== ШАГ 3-5: Сбор активных с пошаговым прогрессом ==========
     async function collectActiveUsers(token, ownerId, postsLimit, photosLimit, clipsLimit, checkPhotos, checkClips) {
         const activeSet = new Set();
         const delays = getDelays();
@@ -1051,22 +1063,28 @@
         let photos = [];
         let clips = [];
 
+        // 1) Посты – прогресс 10%
         if (postsLimit !== 0) {
             setStage('Шаг 3/6: Загрузка постов');
             posts = await getPosts(token, ownerId, postsLimit);
             log(`Загружено постов: ${posts.length}`, 'info');
+            updateProgress(10, 'загрузка...');
         }
 
+        // 2) Фотографии – прогресс 25%
         if (checkPhotos) {
             setStage('Шаг 4/6: Загрузка фотографий');
             photos = await getPhotos(token, ownerId, photosLimit);
             log(`Загружено фотографий: ${photos.length}`, 'info');
+            updateProgress(25, 'загрузка...');
         }
 
+        // 3) Клипы – прогресс 40%
         if (checkClips) {
             setStage('Шаг 5/6: Загрузка клипов');
             clips = await getClips(token, ownerId, clipsLimit);
             log(`Загружено клипов: ${clips.length}`, 'info');
+            updateProgress(40, 'загрузка...');
         }
 
         const totalItems = posts.length + photos.length + clips.length;
@@ -1075,24 +1093,28 @@
             return activeSet;
         }
 
+        // Устанавливаем общее количество для обработки
         totalToProcess = totalItems;
         processedCount = 0;
         startTime = Date.now();
         if (etaInterval) clearInterval(etaInterval);
         etaInterval = setInterval(updateETA, 2000);
 
+        // Обработка постов – от 40% до 60%
         if (posts.length > 0) {
             setStage(`Шаг 3/6: Обработка постов (0/${posts.length})`);
             const postActive = await processContentItems(posts, 'post', token, ownerId, delays);
             for (const id of postActive) activeSet.add(id);
         }
 
+        // Обработка фотографий – от 60% до 80%
         if (photos.length > 0 && checkPhotos) {
             setStage(`Шаг 4/6: Обработка фотографий (0/${photos.length})`);
             const photoActive = await processContentItems(photos, 'photo', token, ownerId, delays);
             for (const id of photoActive) activeSet.add(id);
         }
 
+        // Обработка клипов – от 80% до 100%
         if (clips.length > 0 && checkClips) {
             setStage(`Шаг 5/6: Обработка клипов (0/${clips.length})`);
             const clipActive = await processContentItems(clips, 'clip', token, ownerId, delays);
@@ -1142,7 +1164,7 @@
         logDiv.innerHTML = '';
         document.getElementById('statsGrid').style.display = 'none';
         document.getElementById('groupActions').classList.remove('visible');
-        log(`🚀 Запуск анализа v6.1`, 'info');
+        log(`🚀 Запуск анализа v6.2`, 'info');
         log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
         log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
         log(`Фильтр: ${currentFilter}`, 'info');
