@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VK Activity Checker v5.4 (friends.getRecent)</title>
+    <title>VK Activity Checker v6.0</title>
     <style>
         * { box-sizing: border-box; }
         body {
@@ -20,7 +20,7 @@
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0,0,0,0.1);
             width: 100%;
-            max-width: 900px;
+            max-width: 1000px;
         }
         h2 { color: #2c3e50; margin: 0 0 5px 0; }
         .desc { font-size: 13px; color: #7f8c8d; margin-bottom: 20px; }
@@ -83,6 +83,104 @@
         .btn-mode-normal { background: #e67e22; color: white; }
         .btn-order-old { background: #2980b9; color: white; }
         .btn-order-new { background: #8e44ad; color: white; }
+        .btn-sm-danger { background: #e74c3c; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-sm-success { background: #27ae60; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-sm-secondary { background: #95a5a6; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
+        .btn-sm-danger:hover { background: #c0392b; }
+        .btn-sm-success:hover { background: #219a52; }
+        .btn-sm-secondary:hover { background: #7f8d8d; }
+
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            padding: 10px 0;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filter-bar input {
+            padding: 8px 12px;
+            border: 1px solid #dcdfe6;
+            border-radius: 8px;
+            font-size: 13px;
+            background: white;
+            flex: 1;
+            min-width: 150px;
+        }
+        .filter-bar .result-count {
+            font-size: 13px;
+            color: #7f8c8d;
+            margin-left: auto;
+        }
+        .filter-bar .filter-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        .filter-bar .filter-buttons button {
+            padding: 6px 12px;
+            font-size: 12px;
+            border-radius: 8px;
+            border: 1px solid #dcdfe6;
+            background: #f8f9fa;
+            color: #2c3e50;
+            cursor: pointer;
+        }
+        .filter-bar .filter-buttons button.active-filter {
+            background: #4a76a8;
+            color: white;
+            border-color: #4a76a8;
+        }
+
+        .batch-delete {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            flex-wrap: wrap;
+        }
+        .batch-delete label { font-size: 13px; font-weight: normal; margin: 0; text-transform: none; color: #2c3e50; }
+        .batch-delete input { width: 70px; padding: 6px; font-size: 13px; }
+        .batch-delete button { padding: 8px 16px; font-size: 13px; }
+
+        .content-check {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        .content-check .check-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            background: white;
+            padding: 6px 12px;
+            border-radius: 8px;
+            border: 1px solid #dcdfe6;
+        }
+        .content-check .check-group label {
+            margin: 0;
+            font-size: 13px;
+            font-weight: normal;
+            text-transform: none;
+            color: #2c3e50;
+        }
+        .content-check .check-group input[type="number"] {
+            width: 60px;
+            padding: 4px 6px;
+            font-size: 13px;
+            border: 1px solid #dcdfe6;
+            border-radius: 6px;
+        }
+        .content-check .check-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
 
         #status-display {
             background: #f8f9fa;
@@ -175,12 +273,6 @@
             font-size: 11px;
             border-radius: 8px;
         }
-        .btn-sm-danger { background: #e74c3c; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
-        .btn-sm-success { background: #27ae60; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
-        .btn-sm-secondary { background: #95a5a6; color: white; padding: 6px 12px; font-size: 11px; border: none; border-radius: 8px; cursor: pointer; }
-        .btn-sm-danger:hover { background: #c0392b; }
-        .btn-sm-success:hover { background: #219a52; }
-        .btn-sm-secondary:hover { background: #7f8c8d; }
 
         .friend-badge {
             font-size: 10px;
@@ -192,6 +284,15 @@
         }
         .friend-badge.recent {
             background: #3498db;
+            color: white;
+        }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background: #e74c3c;
             color: white;
         }
 
@@ -245,70 +346,6 @@
         .log-err { color: #e74c3c; }
         .log-info { color: #3498db; }
 
-        .badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 10px;
-            font-size: 11px;
-            font-weight: 600;
-            background: #e74c3c;
-            color: white;
-        }
-
-        .filter-bar {
-            display: flex;
-            gap: 10px;
-            padding: 10px 0;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .filter-bar input {
-            padding: 8px 12px;
-            border: 1px solid #dcdfe6;
-            border-radius: 8px;
-            font-size: 13px;
-            background: white;
-            flex: 1;
-            min-width: 150px;
-        }
-        .filter-bar .result-count {
-            font-size: 13px;
-            color: #7f8c8d;
-            margin-left: auto;
-        }
-
-        .mode-selector {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-            flex-wrap: wrap;
-        }
-        .mode-selector button {
-            flex: 1;
-            padding: 10px;
-            font-size: 13px;
-            border-radius: 10px;
-            min-width: 100px;
-        }
-        .mode-selector .active-mode {
-            border: 3px solid #2c3e50;
-            transform: scale(1.02);
-        }
-        .order-selector {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        .order-selector button {
-            flex: 1;
-            padding: 10px;
-            font-size: 13px;
-            border-radius: 10px;
-        }
-        .order-selector .active-order {
-            border: 3px solid #2c3e50;
-            transform: scale(1.02);
-        }
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
@@ -333,23 +370,42 @@
         .stats-grid .stat-item.active-stat .num { color: #27ae60; }
         .stats-grid .stat-item.inactive-stat .num { color: #e74c3c; }
 
+        .mode-selector, .order-selector {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .mode-selector button, .order-selector button {
+            flex: 1;
+            padding: 10px;
+            font-size: 13px;
+            border-radius: 10px;
+            min-width: 100px;
+        }
+        .mode-selector .active-mode, .order-selector .active-order {
+            border: 3px solid #2c3e50;
+            transform: scale(1.02);
+        }
+
         @media (max-width: 600px) {
             .controls { grid-template-columns: 1fr; }
             .user-card { flex-wrap: wrap; }
             .user-card .actions { width: 100%; justify-content: flex-end; }
             .filter-bar { flex-direction: column; align-items: stretch; }
             .filter-bar .result-count { margin-left: 0; text-align: center; }
-            .mode-selector { flex-direction: column; }
-            .order-selector { flex-direction: column; }
+            .mode-selector, .order-selector { flex-direction: column; }
             .stats-grid { grid-template-columns: 1fr; }
+            .content-check { flex-direction: column; }
+            .batch-delete { flex-direction: column; align-items: stretch; }
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>VK Activity Checker v5.4</h2>
-    <p class="desc">Сортировка по дате добавления через friends.getRecent</p>
+    <h2>VK Activity Checker v6.0</h2>
+    <p class="desc">Сортировка по дате добавления через friends.getRecent + проверка фото и видео</p>
 
     <div class="barkov-box">
         <button class="btn-login" onclick="window.open('https://vk.barkov.net/', '_blank')">
@@ -364,7 +420,7 @@
             2. Затем нажмите «Получить токен» и разрешите доступ.<br>
             3. Скопируйте <b>всю ссылку</b> из адресной строки браузера.<br>
             4. Вставьте её в поле ниже.<br>
-            5. Выберите режим и количество постов.<br>
+            5. Выберите режим, порядок и типы контента для проверки.<br>
             6. Нажмите «Начать анализ».
         </div>
     </div>
@@ -384,9 +440,26 @@
         <button id="orderNew" class="btn-order-new" onclick="setOrder('new')">🆕 Сначала новые</button>
     </div>
 
+    <!-- Настройки проверки контента -->
     <div class="input-group">
-        <label>Количество постов на вашей стене для проверки (0 = все)</label>
-        <input type="number" id="postsLimit" value="50" min="0" step="1">
+        <label>Типы контента для проверки активности</label>
+        <div class="content-check">
+            <div class="check-group">
+                <input type="checkbox" id="checkWall" checked>
+                <label for="checkWall">Стена (посты)</label>
+                <input type="number" id="wallLimit" value="50" min="0" step="1">
+            </div>
+            <div class="check-group">
+                <input type="checkbox" id="checkPhotos" checked>
+                <label for="checkPhotos">Фотографии</label>
+                <input type="number" id="photosLimit" value="50" min="0" step="1">
+            </div>
+            <div class="check-group">
+                <input type="checkbox" id="checkVideos" checked>
+                <label for="checkVideos">Видеозаписи</label>
+                <input type="number" id="videosLimit" value="50" min="0" step="1">
+            </div>
+        </div>
     </div>
 
     <div class="controls">
@@ -425,9 +498,22 @@
         </div>
     </div>
 
+    <!-- Фильтр и групповое удаление -->
     <div class="filter-bar">
+        <div class="filter-buttons">
+            <button id="filterAll" class="active-filter" onclick="setFilter('all')">Все</button>
+            <button id="filterRecent" onclick="setFilter('recent')">🆕 Недавние</button>
+            <button id="filterOld" onclick="setFilter('old')">📅 Старые</button>
+        </div>
         <input type="text" id="searchInput" placeholder="Поиск по имени..." oninput="renderPage()">
         <span class="result-count" id="resultCount">Показано: 0</span>
+    </div>
+
+    <div class="batch-delete">
+        <label>Удалить первых:</label>
+        <input type="number" id="batchDeleteCount" value="5" min="1">
+        <button class="btn-danger" onclick="batchDelete()">🗑 Удалить N</button>
+        <span style="font-size:12px; color:#7f8c8d;">(в порядке сортировки)</span>
     </div>
 
     <div id="user-list">
@@ -444,6 +530,7 @@
 </div>
 
 <script>
+    // ===== ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ =====
     let isRunning = false;
     let currentToken = '';
     let myId = null;
@@ -452,14 +539,15 @@
     let activeUsers = new Set();
     let inactiveUsers = [];
 
-    let recentSet = new Set();      // ID недавно добавленных друзей
-    let recentList = [];            // упорядоченный список ID (новые в начале)
+    let recentSet = new Set();
+    let recentList = [];
 
     let filteredUsers = [];
     let currentPage = 1;
     const PAGE_SIZE = 20;
     let currentMode = 'safe';
     let currentOrder = 'old';
+    let filterType = 'all';       // 'all', 'recent', 'old'
     let abortFlag = false;
 
     let startTime = null;
@@ -467,7 +555,13 @@
     let totalToProcess = 0;
     let etaInterval = null;
 
+    // Прогресс по этапам
+    let totalStages = 0;
+    let currentStage = 0;
+
     const logDiv = document.getElementById('log');
+
+    // ===== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ =====
     function safeUpdate(id, value) {
         const el = document.getElementById(id);
         if (el) el.innerText = value;
@@ -516,14 +610,11 @@
         if (fill) fill.style.width = Math.min(100, percent) + '%';
         if (percentText) percentText.textContent = percent.toFixed(1) + '%';
 
-        if (etaText && eta !== null) {
-            if (eta === 'завершено') {
-                etaText.textContent = '✅ Завершено!';
-            } else if (eta === 'остановлено') {
-                etaText.textContent = '⏹ Остановлено';
-            } else {
-                etaText.textContent = '⏳ ~' + eta;
-            }
+        if (etaText) {
+            if (eta === 'завершено') etaText.textContent = '✅ Завершено!';
+            else if (eta === 'остановлено') etaText.textContent = '⏹ Остановлено';
+            else if (eta !== null) etaText.textContent = '⏳ ~' + eta;
+            else etaText.textContent = '⏳ Ожидание...';
         }
     }
 
@@ -540,10 +631,7 @@
     }
 
     function updateETA() {
-        if (!startTime || processedCount === 0 || processedCount >= totalToProcess) {
-            return;
-        }
-
+        if (!startTime || processedCount === 0 || processedCount >= totalToProcess) return;
         const elapsed = (Date.now() - startTime) / 1000;
         const rate = processedCount / elapsed;
         const remaining = totalToProcess - processedCount;
@@ -564,9 +652,7 @@
             const cbName = 'vk_' + Math.random().toString(16).slice(2);
             window[cbName] = (data) => {
                 delete window[cbName];
-                if (document.body.contains(script)) {
-                    document.body.removeChild(script);
-                }
+                if (document.body.contains(script)) document.body.removeChild(script);
                 resolve(data);
             };
             const script = document.createElement('script');
@@ -576,6 +662,18 @@
         });
     }
 
+    function getContentSettings() {
+        return {
+            checkWall: document.getElementById('checkWall').checked,
+            wallLimit: parseInt(document.getElementById('wallLimit').value) || 0,
+            checkPhotos: document.getElementById('checkPhotos').checked,
+            photosLimit: parseInt(document.getElementById('photosLimit').value) || 0,
+            checkVideos: document.getElementById('checkVideos').checked,
+            videosLimit: parseInt(document.getElementById('videosLimit').value) || 0
+        };
+    }
+
+    // ===== РЕЖИМЫ И ПОРЯДОК =====
     function setMode(mode) {
         currentMode = mode;
         safeUpdate('mode-text', mode === 'safe' ? 'Безопасный' : 'Обычный');
@@ -594,9 +692,16 @@
         if (oldBtn) oldBtn.className = 'btn-order-old' + (order === 'old' ? ' active-order' : '');
         if (newBtn) newBtn.className = 'btn-order-new' + (order === 'new' ? ' active-order' : '');
         log(`Порядок: ${order === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        if (allFriends.length > 0) {
-            applyOrderAndRender();
-        }
+        if (allFriends.length > 0) applyOrderAndRender();
+    }
+
+    function setFilter(type) {
+        filterType = type;
+        document.querySelectorAll('.filter-buttons button').forEach(b => b.classList.remove('active-filter'));
+        const map = { all: 'filterAll', recent: 'filterRecent', old: 'filterOld' };
+        const btn = document.getElementById(map[type]);
+        if (btn) btn.classList.add('active-filter');
+        renderPage();
     }
 
     function stopAnalysis() {
@@ -609,353 +714,43 @@
         updateProgress(0, 'остановлено');
         log('Анализ остановлен', 'warn');
         setStatus('Остановлен');
-        const startBtn = document.getElementById('startBtn');
-        if (startBtn) startBtn.disabled = false;
+        document.getElementById('startBtn').disabled = false;
     }
 
-    // ============ СОРТИРОВКА ПО recent ============
+    // ===== СОРТИРОВКА ПО RECENT =====
     function applyOrderAndRender() {
         const sorted = [...inactiveUsers].sort((a, b) => {
             const aRecent = recentSet.has(a.id);
             const bRecent = recentSet.has(b.id);
-
-            // Если один в recent, другой нет
-            if (aRecent && !bRecent) {
-                // Для "старые" — aRecent должен идти позже, для "новые" — раньше
-                return currentOrder === 'old' ? 1 : -1;
-            }
-            if (!aRecent && bRecent) {
-                return currentOrder === 'old' ? -1 : 1;
-            }
-
-            // Оба в recent или оба не в recent
+            if (aRecent && !bRecent) return currentOrder === 'old' ? 1 : -1;
+            if (!aRecent && bRecent) return currentOrder === 'old' ? -1 : 1;
             if (aRecent && bRecent) {
-                // Сортируем по индексу в recentList (чем меньше индекс, тем новее)
                 const idxA = recentList.indexOf(a.id);
                 const idxB = recentList.indexOf(b.id);
-                if (currentOrder === 'old') {
-                    // старые сверху — значит обратный порядок (новые в конце)
-                    return idxB - idxA; // чем больше idx, тем старше (т.к. новые имеют меньший индекс)
-                } else {
-                    return idxA - idxB; // новые сверху
-                }
+                if (currentOrder === 'old') return idxB - idxA;
+                else return idxA - idxB;
             }
-
-            // Оба не в recent — сортируем по ID (меньше ID = старее)
             return currentOrder === 'old' ? a.id - b.id : b.id - a.id;
         });
-
         inactiveUsers = sorted;
         currentPage = 1;
         renderPage();
     }
 
-    // ============ ШАГ 1: ID владельца ============
-    async function getMyId(token) {
-        if (myId) return myId;
-        const res = await vkCall('users.get', {}, token);
-        if (res.error) {
-            log('Ошибка получения ID: ' + res.error.error_msg, 'err');
-            return null;
-        }
-        myId = res.response[0].id;
-        log(`ID владельца: ${myId}`, 'info');
-        return myId;
-    }
-
-    // ============ ШАГ 2: Сбор друзей и recent ============
-    async function collectAllFriends(token) {
-        let all = [];
-        let offset = 0;
-        const count = 1000;
-        let hasMore = true;
-        const delays = getDelays();
-
-        setStage('Сбор базы друзей');
-        while (hasMore && isRunning) {
-            log(`Загрузка друзей: смещение ${offset}...`, 'info');
-            const res = await vkCall('friends.get', {
-                fields: 'photo_50,first_name,last_name,deactivated',
-                count: count,
-                offset: offset
-            }, token);
-            if (res.error) {
-                log('Ошибка: ' + res.error.error_msg, 'err');
-                return null;
-            }
-
-            const items = res.response.items || [];
-            all = all.concat(items);
-            safeUpdate('total-friends', all.length);
-
-            if (items.length < count) {
-                hasMore = false;
-            } else {
-                offset += count;
-                await sleep(delays.betweenFriendBatches);
-            }
-        }
-
-        const filtered = all.filter(f => !f.deactivated);
-        log(`Собрано друзей: ${filtered.length}`, 'info');
-
-        // ===== Получаем список недавно добавленных =====
-        setStage('Получение recent');
-        try {
-            const recentRes = await vkCall('friends.getRecent', {
-                count: 1000 // максимум
-            }, token);
-            if (recentRes.error) {
-                log('Ошибка получения recent: ' + recentRes.error.error_msg, 'warn');
-                // Если ошибка, оставляем пустой список
-                recentSet = new Set();
-                recentList = [];
-            } else {
-                // Исправление: метод friends.getRecent возвращает прямой плоский массив, а не объект с полем items
-                const ids = Array.isArray(recentRes.response) ? recentRes.response : (recentRes.response ? (recentRes.response.items || []) : []);
-                recentSet = new Set(ids);
-                recentList = ids; // порядок: сначала новые
-                log(`Получено недавно добавленных: ${ids.length}`, 'info');
-                if (ids.length > 0) {
-                    log(`Пример recent ID: ${ids.slice(0, 5).join(', ')}`, 'info');
-                }
-            }
-        } catch (e) {
-            log('Ошибка вызова friends.getRecent: ' + e.message, 'warn');
-            recentSet = new Set();
-            recentList = [];
-        }
-
-        return filtered;
-    }
-
-    // ============ ШАГ 3: Сбор активных ============
-    async function collectActiveUsers(token, postsLimit) {
-        const activeSet = new Set();
-        const delays = getDelays();
-
-        setStage('Сбор базы активных');
-
-        const postsRes = await vkCall('wall.get', {
-            owner_id: myId,
-            count: Math.min(postsLimit || 100, 100),
-            offset: 0,
-            filter: 'all'
-        }, token);
-        if (postsRes.error) {
-            log('Ошибка получения постов: ' + postsRes.error.error_msg, 'err');
-            return activeSet;
-        }
-
-        const posts = postsRes.response.items || [];
-        if (posts.length === 0) {
-            log('На стене нет постов', 'warn');
-            return activeSet;
-        }
-
-        log(`Получено ${posts.length} постов`, 'info');
-        safeUpdate('checked-posts', posts.length);
-
-        let postIndex = 0;
-        totalToProcess = posts.length;
-        startTime = Date.now();
-
-        for (const post of posts) {
-            if (!isRunning || abortFlag) break;
-            postIndex++;
-            processedCount = postIndex;
-            const percent = (postIndex / posts.length) * 100;
-            updateProgress(percent);
-
-            // Лайки поста
-            const likesRes = await vkCall('likes.getList', {
-                type: 'post',
-                owner_id: myId,
-                item_id: post.id,
-                count: 1000,
-                filter: 'likes'
-            }, token);
-            if (!likesRes.error && likesRes.response) {
-                const likers = likesRes.response.items || [];
-                for (const likerId of likers) {
-                    activeSet.add(likerId);
-                }
-                log(`Пост ${postIndex}/${posts.length}: +${likers.length} лайков`, 'info');
-            }
-
-            await sleep(delays.betweenPosts);
-
-            // Комментарии
-            const commentsRes = await vkCall('wall.getComments', {
-                owner_id: myId,
-                post_id: post.id,
-                count: 100,
-                offset: 0
-            }, token);
-            if (!commentsRes.error && commentsRes.response) {
-                const comments = commentsRes.response.items || [];
-                for (const comment of comments) {
-                    activeSet.add(comment.from_id);
-                    if (comment.likes && comment.likes.count > 0) {
-                        const likeListRes = await vkCall('likes.getList', {
-                            type: 'comment',
-                            owner_id: myId,
-                            item_id: comment.id,
-                            count: 1000,
-                            filter: 'likes'
-                        }, token);
-                        if (!likeListRes.error && likeListRes.response) {
-                            const commentLikers = likeListRes.response.items || [];
-                            for (const likerId of commentLikers) {
-                                activeSet.add(likerId);
-                            }
-                        }
-                        await sleep(delays.betweenLikes);
-                    }
-                }
-                log(`Пост ${postIndex}/${posts.length}: +${comments.length} комментариев`, 'info');
-            }
-
-            await sleep(delays.betweenPosts);
-        }
-
-        log(`Собрано активных: ${activeSet.size}`, 'success');
-        return activeSet;
-    }
-
-    // ============ ШАГ 4: Сравнение ============
-    function findInactiveFriends(friends, activeSet) {
-        const inactive = [];
-        for (const friend of friends) {
-            if (!activeSet.has(friend.id)) {
-                inactive.push(friend);
-            }
-        }
-        return inactive;
-    }
-
-    // ============ ГЛАВНЫЙ ПРОЦЕСС ============
-    async function startAnalysis() {
-        if (isRunning) return;
-        const token = getTokenFromInput();
-        if (token.length < 30) {
-            alert('Сначала вставьте корректный токен или ссылку!');
-            return;
-        }
-        currentToken = token;
-        abortFlag = false;
-
-        const postsLimit = parseInt(document.getElementById('postsLimit').value) || 100;
-
-        isRunning = true;
-        const startBtn = document.getElementById('startBtn');
-        if (startBtn) startBtn.disabled = true;
-        logDiv.innerHTML = '';
-        document.getElementById('statsGrid').style.display = 'none';
-        log(`🚀 Запуск анализа v5.4 (friends.getRecent)`, 'info');
-        log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
-        log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
-        setStatus('Запуск...');
-        updateProgress(0, 'загрузка...');
-
-        startTime = null;
-        processedCount = 0;
-        totalToProcess = 0;
-        if (etaInterval) {
-            clearInterval(etaInterval);
-            etaInterval = null;
-        }
-
-        try {
-            // ШАГ 1
-            const ownerId = await getMyId(token);
-            if (!ownerId) {
-                isRunning = false;
-                setStatus('Ошибка');
-                if (startBtn) startBtn.disabled = false;
-                return;
-            }
-
-            // ШАГ 2
-            setStatus('Сбор базы друзей...');
-            allFriends = await collectAllFriends(token);
-            if (!allFriends) {
-                isRunning = false;
-                setStatus('Ошибка');
-                if (startBtn) startBtn.disabled = false;
-                return;
-            }
-
-            if (allFriends.length === 0) {
-                log('У вас нет друзей', 'warn');
-                isRunning = false;
-                setStatus('Нет друзей');
-                if (startBtn) startBtn.disabled = false;
-                return;
-            }
-
-            // ШАГ 3
-            setStatus('Сбор базы активных...');
-            activeUsers = await collectActiveUsers(token, postsLimit);
-
-            if (!isRunning || abortFlag) {
-                log('Анализ прерван', 'warn');
-                isRunning = false;
-                setStatus('Прерван');
-                if (startBtn) startBtn.disabled = false;
-                return;
-            }
-
-            // ШАГ 4
-            setStatus('Сравнение баз...');
-            setStage('Сравнение');
-
-            const inactive = findInactiveFriends(allFriends, activeUsers);
-            inactiveUsers = inactive;
-
-            // Применяем сортировку по recent
-            applyOrderAndRender();
-            const statsGrid = document.getElementById('statsGrid');
-            if (statsGrid) statsGrid.style.display = 'grid';
-            safeUpdate('statTotal', allFriends.length);
-            safeUpdate('statActive', activeUsers.size);
-            safeUpdate('statInactive', inactive.length);
-
-            updateProgress(100, 'завершено');
-            log(`✅ Анализ завершён!`, 'success');
-            log(`   Всего друзей: ${allFriends.length}`, 'info');
-            log(`   Активных: ${activeUsers.size}`, 'success');
-            log(`   Неактивных: ${inactive.length}`, 'warn');
-            log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
-            setStatus('Готово');
-
-        } catch (e) {
-            log('Ошибка: ' + e.message, 'err');
-            isRunning = false;
-            setStatus('Ошибка');
-            if (etaInterval) {
-                clearInterval(etaInterval);
-                etaInterval = null;
-            }
-        }
-
-        if (startBtn) startBtn.disabled = false;
-        isRunning = false;
-    }
-
-    // ============ ОТРИСОВКА ============
+    // ===== ОТРИСОВКА СПИСКА =====
     function renderPage() {
-        const searchInput = document.getElementById('searchInput');
-        const search = searchInput ? searchInput.value.toLowerCase() : '';
-
-        filteredUsers = inactiveUsers.filter(user => {
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        let list = inactiveUsers.filter(u => {
             if (search) {
-                const name = (user.first_name + ' ' + user.last_name).toLowerCase();
+                const name = (u.first_name + ' ' + u.last_name).toLowerCase();
                 if (!name.includes(search)) return false;
             }
+            if (filterType === 'recent' && !recentSet.has(u.id)) return false;
+            if (filterType === 'old' && recentSet.has(u.id)) return false;
             return true;
         });
 
+        filteredUsers = list;
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
         if (currentPage > totalPages) currentPage = totalPages || 1;
         if (currentPage < 1) currentPage = 1;
@@ -970,7 +765,7 @@
         const container = document.getElementById('user-list');
         if (!container) return;
         if (filteredUsers.length === 0) {
-            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих поиску'}</div>`;
+            container.innerHTML = `<div class="empty">${inactiveUsers.length === 0 ? '✅ Все друзья активны!' : 'Нет пользователей, соответствующих фильтру'}</div>`;
             return;
         }
 
@@ -1002,14 +797,12 @@
             `;
             position++;
         }
-
         container.innerHTML = html;
     }
 
     function prevPage() {
         if (currentPage > 1) { currentPage--; renderPage(); }
     }
-
     function nextPage() {
         const totalPages = Math.ceil(filteredUsers.length / PAGE_SIZE);
         if (currentPage < totalPages) { currentPage++; renderPage(); }
@@ -1050,8 +843,375 @@
         }
     }
 
+    // ===== ГРУППОВОЕ УДАЛЕНИЕ =====
+    async function batchDelete() {
+        const count = parseInt(document.getElementById('batchDeleteCount').value);
+        if (!count || count < 1) { alert('Введите корректное количество'); return; }
+        // Получаем текущий отфильтрованный список с учётом поиска и фильтра
+        const search = document.getElementById('searchInput').value.toLowerCase();
+        let list = inactiveUsers.filter(u => {
+            if (search) {
+                const name = (u.first_name + ' ' + u.last_name).toLowerCase();
+                if (!name.includes(search)) return false;
+            }
+            if (filterType === 'recent' && !recentSet.has(u.id)) return false;
+            if (filterType === 'old' && recentSet.has(u.id)) return false;
+            return true;
+        });
+        // Сортировка уже применена к inactiveUsers, берём первые count
+        const toDelete = list.slice(0, count);
+        if (toDelete.length === 0) { alert('Нет пользователей для удаления'); return; }
+        if (!confirm(`Удалить ${toDelete.length} пользователей?`)) return;
+        let deleted = 0;
+        for (const user of toDelete) {
+            try {
+                const res = await vkCall('friends.delete', { user_id: user.id }, currentToken);
+                if (res.response && (res.response.success === 1 || res.response === 1)) {
+                    deleted++;
+                    inactiveUsers = inactiveUsers.filter(u => u.id !== user.id);
+                    allFriends = allFriends.filter(u => u.id !== user.id);
+                    log(`✅ Удалён ${user.id} (${deleted}/${toDelete.length})`, 'success');
+                } else {
+                    log(`❌ Ошибка удаления ${user.id}`, 'err');
+                }
+            } catch (e) {
+                log(`Ошибка: ${e.message}`, 'err');
+            }
+            await sleep(500);
+        }
+        safeUpdate('statInactive', inactiveUsers.length);
+        safeUpdate('statTotal', allFriends.length);
+        applyOrderAndRender();
+        alert(`Удалено ${deleted} пользователей`);
+    }
+
+    // ===== ШАГ 1: ID владельца =====
+    async function getMyId(token) {
+        if (myId) return myId;
+        const res = await vkCall('users.get', {}, token);
+        if (res.error) {
+            log('Ошибка получения ID: ' + res.error.error_msg, 'err');
+            return null;
+        }
+        myId = res.response[0].id;
+        log(`ID владельца: ${myId}`, 'info');
+        return myId;
+    }
+
+    // ===== ШАГ 2: Сбор друзей с прогрессом =====
+    async function collectAllFriends(token) {
+        // Получаем общее количество
+        const countRes = await vkCall('friends.get', { count: 0 }, token);
+        if (countRes.error) {
+            log('Ошибка получения количества друзей: ' + countRes.error.error_msg, 'err');
+            return null;
+        }
+        const totalFriends = countRes.response.count || 0;
+        log(`Всего друзей: ${totalFriends}`, 'info');
+        if (totalFriends === 0) return [];
+
+        let all = [];
+        let offset = 0;
+        const count = 1000;
+        let hasMore = true;
+        const delays = getDelays();
+        setStage(`Сбор друзей (этап ${currentStage+1}/${totalStages})`);
+
+        while (hasMore && isRunning) {
+            const res = await vkCall('friends.get', {
+                fields: 'photo_50,first_name,last_name,deactivated',
+                count: count,
+                offset: offset
+            }, token);
+            if (res.error) {
+                log('Ошибка: ' + res.error.error_msg, 'err');
+                return null;
+            }
+            const items = res.response.items || [];
+            all = all.concat(items);
+            const loaded = all.length;
+            const percent = (loaded / totalFriends) * 100;
+            // Общий прогресс: текущий этап (1) имеет вес 1/totalStages
+            const overall = ((currentStage) / totalStages) * 100 + (percent / totalStages);
+            updateProgress(overall);
+
+            if (items.length < count) hasMore = false;
+            else offset += count;
+            await sleep(delays.betweenFriendBatches);
+        }
+
+        const filtered = all.filter(f => !f.deactivated);
+        log(`Собрано друзей (активных): ${filtered.length}`, 'info');
+        currentStage++;
+        return filtered;
+    }
+
+    // ===== ШАГ 3: Сбор активных по всем типам контента =====
+    async function collectActiveUsers(token, settings) {
+        const activeSet = new Set();
+        const delays = getDelays();
+
+        // Формируем список этапов
+        const stages = [];
+        if (settings.checkWall && settings.wallLimit > 0) stages.push({ type: 'wall', limit: settings.wallLimit, label: 'Стена' });
+        if (settings.checkPhotos && settings.photosLimit > 0) stages.push({ type: 'photo', limit: settings.photosLimit, label: 'Фотографии' });
+        if (settings.checkVideos && settings.videosLimit > 0) stages.push({ type: 'video', limit: settings.videosLimit, label: 'Видеозаписи' });
+
+        if (stages.length === 0) {
+            log('Не выбрано ни одного типа контента для проверки активности', 'warn');
+            return activeSet;
+        }
+
+        let stageIndex = 0;
+        for (const stage of stages) {
+            stageIndex++;
+            setStage(`Проверка ${stage.label} (этап ${currentStage+1}/${totalStages})`);
+            // Получаем список объектов
+            let items = [];
+            if (stage.type === 'wall') {
+                const res = await vkCall('wall.get', {
+                    owner_id: myId,
+                    count: Math.min(stage.limit, 100),
+                    offset: 0,
+                    filter: 'all'
+                }, token);
+                if (!res.error) items = res.response.items || [];
+            } else if (stage.type === 'photo') {
+                // Используем альбом 'profile' (фото профиля)
+                const res = await vkCall('photos.get', {
+                    owner_id: myId,
+                    album_id: 'profile',
+                    count: Math.min(stage.limit, 1000),
+                    offset: 0
+                }, token);
+                if (!res.error) items = res.response.items || [];
+            } else if (stage.type === 'video') {
+                const res = await vkCall('video.get', {
+                    owner_id: myId,
+                    count: Math.min(stage.limit, 200),
+                    offset: 0
+                }, token);
+                if (!res.error) items = res.response.items || [];
+            }
+
+            if (items.length === 0) {
+                log(`Нет ${stage.label} для проверки`, 'warn');
+                // Переход к следующему этапу
+                currentStage++;
+                continue;
+            }
+
+            log(`Получено ${items.length} ${stage.label}`, 'info');
+            let itemIndex = 0;
+            for (const item of items) {
+                if (!isRunning || abortFlag) break;
+                itemIndex++;
+                // Прогресс внутри этапа
+                const stageProgress = (itemIndex / items.length) * 100;
+                const overall = ((currentStage) / totalStages) * 100 + (stageProgress / totalStages);
+                updateProgress(overall);
+
+                // Лайки
+                const likesRes = await vkCall('likes.getList', {
+                    type: stage.type === 'wall' ? 'post' : stage.type === 'photo' ? 'photo' : 'video',
+                    owner_id: myId,
+                    item_id: item.id,
+                    count: 1000,
+                    filter: 'likes'
+                }, token);
+                if (!likesRes.error && likesRes.response) {
+                    const likers = likesRes.response.items || [];
+                    for (const likerId of likers) {
+                        activeSet.add(likerId);
+                    }
+                    log(`${stage.label} ${itemIndex}/${items.length}: +${likers.length} лайков`, 'info');
+                }
+                await sleep(delays.betweenLikes);
+
+                // Комментарии
+                let comments = [];
+                if (stage.type === 'wall') {
+                    const commentsRes = await vkCall('wall.getComments', {
+                        owner_id: myId,
+                        post_id: item.id,
+                        count: 100,
+                        offset: 0
+                    }, token);
+                    if (!commentsRes.error) comments = commentsRes.response.items || [];
+                } else if (stage.type === 'photo') {
+                    const commentsRes = await vkCall('photos.getComments', {
+                        owner_id: myId,
+                        photo_id: item.id,
+                        count: 100,
+                        offset: 0
+                    }, token);
+                    if (!commentsRes.error) comments = commentsRes.response.items || [];
+                } else if (stage.type === 'video') {
+                    const commentsRes = await vkCall('video.getComments', {
+                        owner_id: myId,
+                        video_id: item.id,
+                        count: 100,
+                        offset: 0
+                    }, token);
+                    if (!commentsRes.error) comments = commentsRes.response.items || [];
+                }
+
+                for (const comment of comments) {
+                    activeSet.add(comment.from_id);
+                    // Лайки комментариев
+                    const likeListRes = await vkCall('likes.getList', {
+                        type: 'comment',
+                        owner_id: myId,
+                        item_id: comment.id,
+                        count: 1000,
+                        filter: 'likes'
+                    }, token);
+                    if (!likeListRes.error && likeListRes.response) {
+                        const commentLikers = likeListRes.response.items || [];
+                        for (const likerId of commentLikers) {
+                            activeSet.add(likerId);
+                        }
+                    }
+                    await sleep(delays.betweenLikes);
+                }
+                log(`${stage.label} ${itemIndex}/${items.length}: +${comments.length} комментариев`, 'info');
+                await sleep(delays.betweenPosts);
+            }
+            // Завершили этап
+            currentStage++;
+        }
+
+        return activeSet;
+    }
+
+    // ===== ШАГ 4: Сравнение =====
+    function findInactiveFriends(friends, activeSet) {
+        const inactive = [];
+        for (const friend of friends) {
+            if (!activeSet.has(friend.id)) {
+                inactive.push(friend);
+            }
+        }
+        return inactive;
+    }
+
+    // ===== ГЛАВНЫЙ ПРОЦЕСС =====
+    async function startAnalysis() {
+        if (isRunning) return;
+        const token = getTokenFromInput();
+        if (token.length < 30) {
+            alert('Сначала вставьте корректный токен или ссылку!');
+            return;
+        }
+        currentToken = token;
+        abortFlag = false;
+
+        const settings = getContentSettings();
+        // Проверка: хотя бы один тип включён и лимит > 0
+        const anyEnabled = (settings.checkWall && settings.wallLimit > 0) ||
+                           (settings.checkPhotos && settings.photosLimit > 0) ||
+                           (settings.checkVideos && settings.videosLimit > 0);
+        if (!anyEnabled) {
+            alert('Включите хотя бы один тип контента с количеством > 0');
+            return;
+        }
+
+        isRunning = true;
+        const startBtn = document.getElementById('startBtn');
+        startBtn.disabled = true;
+        logDiv.innerHTML = '';
+        document.getElementById('statsGrid').style.display = 'none';
+        log(`🚀 Запуск анализа v6.0`, 'info');
+        log(`Режим: ${currentMode === 'safe' ? 'Безопасный' : 'Обычный'}`, 'info');
+        log(`Порядок: ${currentOrder === 'old' ? 'старые друзья сверху' : 'новые друзья сверху'}`, 'info');
+        setStatus('Запуск...');
+        updateProgress(0, 'загрузка...');
+
+        startTime = null;
+        processedCount = 0;
+        totalToProcess = 0;
+        if (etaInterval) {
+            clearInterval(etaInterval);
+            etaInterval = null;
+        }
+
+        try {
+            // Определяем общее количество этапов
+            totalStages = 1; // друзья
+            if (settings.checkWall && settings.wallLimit > 0) totalStages++;
+            if (settings.checkPhotos && settings.photosLimit > 0) totalStages++;
+            if (settings.checkVideos && settings.videosLimit > 0) totalStages++;
+            totalStages++; // сравнение
+            currentStage = 0;
+
+            // ШАГ 1: ID
+            const ownerId = await getMyId(token);
+            if (!ownerId) throw new Error('Не удалось получить ID');
+
+            // ШАГ 2: Друзья
+            setStatus('Сбор базы друзей...');
+            allFriends = await collectAllFriends(token);
+            if (!allFriends) throw new Error('Ошибка сбора друзей');
+            if (allFriends.length === 0) {
+                log('У вас нет друзей', 'warn');
+                isRunning = false;
+                setStatus('Нет друзей');
+                startBtn.disabled = false;
+                return;
+            }
+
+            // ШАГ 3: Активные
+            setStatus('Сбор базы активных...');
+            activeUsers = await collectActiveUsers(token, settings);
+            if (!isRunning || abortFlag) {
+                log('Анализ прерван', 'warn');
+                isRunning = false;
+                setStatus('Прерван');
+                startBtn.disabled = false;
+                return;
+            }
+
+            // ШАГ 4: Сравнение
+            setStatus('Сравнение баз...');
+            setStage(`Сравнение (этап ${currentStage+1}/${totalStages})`);
+            const inactive = findInactiveFriends(allFriends, activeUsers);
+            inactiveUsers = inactive;
+
+            // Применяем сортировку по recent
+            applyOrderAndRender();
+            const statsGrid = document.getElementById('statsGrid');
+            if (statsGrid) statsGrid.style.display = 'grid';
+            safeUpdate('statTotal', allFriends.length);
+            safeUpdate('statActive', activeUsers.size);
+            safeUpdate('statInactive', inactive.length);
+
+            // Завершаем прогресс
+            updateProgress(100, 'завершено');
+            log(`✅ Анализ завершён!`, 'success');
+            log(`   Всего друзей: ${allFriends.length}`, 'info');
+            log(`   Активных: ${activeUsers.size}`, 'success');
+            log(`   Неактивных: ${inactive.length}`, 'warn');
+            log(`   Сортировка по friends.getRecent (${currentOrder === 'old' ? 'старые сверху' : 'новые сверху'})`, 'info');
+            setStatus('Готово');
+
+        } catch (e) {
+            log('Ошибка: ' + e.message, 'err');
+            isRunning = false;
+            setStatus('Ошибка');
+            if (etaInterval) {
+                clearInterval(etaInterval);
+                etaInterval = null;
+            }
+        }
+
+        startBtn.disabled = false;
+        isRunning = false;
+    }
+
+    // Инициализация
     setMode('safe');
     setOrder('old');
+    setFilter('all');
 </script>
 
 </body>
